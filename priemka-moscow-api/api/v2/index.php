@@ -3,9 +3,8 @@
  * @author Sergey Tumarkin https://tumarkin.me
  */
 
-require_once("/home/s/stumarkin/priemka.moscow/public_html/api/config.php");
-require_once("/home/s/stumarkin/priemka.moscow/public_html/api/shared.functions.php");
-
+require_once( dirname(__DIR__)."/config.php");
+require_once(dirname(__DIR__)."/shared.functions.php");uire_once("/home/s/stumarkin/priemka.moscow/public_html/api/shared.functions.php");
 
 $formType = Array(
     'room' => Array(
