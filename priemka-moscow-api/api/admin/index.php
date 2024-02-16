@@ -40,7 +40,7 @@ function updateSource(){
     $url = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSAhUBqqDeeTlMWzM8wcLPZWMYCoWZmP0i9EkGbYAcASC_7cfwsmXZLSnXGruCDabSbJcCg0Hr_Sen/pub?gid=1623387219&single=true&output=csv';
     // edit https://docs.google.com/spreadsheets/d/1A9WBf3rhws8rpHpAPEH7bH1buPILrEU4Rpb49nNRPHI/edit#gid=1623387219
     $sourceSourceContent = file_get_contents($url);
-    $file_path = $_SERVER['DOCUMENT_ROOT'].'/api/source/sourceContent'.time().'.csv';
+    $file_path = dirname(__DIR__).'/source/sourceContent'.time().'.csv';
     $file_put_res = file_put_contents( $file_path, $sourceSourceContent );
     if ( $file_put_res ){
         return sqlQuery("INSERT 
