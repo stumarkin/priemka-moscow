@@ -3,9 +3,8 @@
  * @author Sergey Tumarkin https://tumarkin.me
  */
 
-require_once("../config.php");
-require_once("../shared.functions.php");
-
+require_once( dirname(__DIR__)."/config.php" );
+require_once( dirname(__DIR__)."/shared.functions.php" );
 
 function getForms( $userid ) {
     $banners = [];
