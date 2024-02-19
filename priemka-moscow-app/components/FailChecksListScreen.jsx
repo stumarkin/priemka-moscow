@@ -67,14 +67,7 @@ export default function FailChecksListScreen ({navigation, route}) {
               </ListItem.Content>
               <Switch
                   value={showReportnames}
-                  onValueChange={ ()=>{
-                    if (!ProDaysLeft>0) {
-                      Alert.alert('Время переходить на Pro 🚀', '\nС бесплатным тарифом можно получить список с указанием сути недостатков\n\nПереходите на Pro, с ним к отчету можно добавить ссылки на номера релевынтных СНиП и ГОСТ.')
-                    } else {
-                      setShowReportnames(!showReportnames) 
-                    }
-                      
-                  } }
+                  onValueChange={ () => setShowReportnames(!showReportnames) }
                   color={theme.lightColors.primary}
                   />
           </ListItem>
