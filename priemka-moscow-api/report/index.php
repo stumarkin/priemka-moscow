@@ -16,7 +16,6 @@ function getFormByToken($id) {
                         LIMIT 1");
     if ($result->num_rows > 0) {
         return $result->fetch_assoc();
-        // return json_decode( str_replace("\n", "<br>", $row['form']) );
     } else {
         return false;
     }
@@ -62,7 +61,11 @@ function formToHtml ($node, $isExpertMode,  $level=1, &$counterThrough=1, $count
             $str .= formToHtml ($nested_node, $isExpertMode, $level+1, $counterThrough, $i++);
         }
         if ($str) {
-            $comment = $node->comment&&$level==1 ? "<tr class='h6 ms-2 mt-2 mb-0'><td></td><td>Общие недостатки</td><td></td></tr> <tr><td>".$counterThrough++."</td><td>".str_replace("\n", "<br>", $node->comment)."</td><td></td></tr>" : "";
+            if ($node->comment && $level==1) {
+                $comment = count( explode("<br>", $node->comment) ) > 1 ? "<ol type='a'><li>".implode("</li><li>", explode("<br>", $node->comment))."</li></ol>" : $node->comment;
+                $comment =  "<tr class='h6 ms-2 mt-2 mb-0'><td></td><td>Общие недостатки</td><td></td></tr> <tr><td>".$counterThrough++."</td><td>".$comment."</td><td></td></tr>";
+            }
+            
             
             return "<tr class='h".(4+$level)." ms-2 mt-2 mb-0 ".($level==1 ? 'table-secondary' : 'table-light')."'><td></td>".getName($node, $isExpertMode )."</tr>".$str.$comment;
         }
@@ -144,7 +147,7 @@ if ($id = getParamFromUrl($_SERVER['REQUEST_URI'])){
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
 
-    <title><?=$address?> - Акт осмотра от priemka-pro.ru</title>
+    <title><?=$address?> - Приёмка.Москва</title>
     <script type="text/javascript">
         (function(e,t){var n=e.amplitude||{_q:[],_iq:{}};var r=t.createElement("script")
         ;r.type="text/javascript"
@@ -174,22 +177,10 @@ if ($id = getParamFromUrl($_SERVER['REQUEST_URI'])){
         !Object.prototype.hasOwnProperty.call(n._iq,e)){n._iq[e]={_q:[]};v(n._iq[e])}
         return n._iq[e]};e.amplitude=n})(window,document);
 
-        amplitude.getInstance().init("c8698f1fccc72a1744388b9e1341b833");
+        amplitude.getInstance().init("f25a5c79e090b04161ab6d54246d390a");
         amplitude.getInstance().setUserId( "<?=$form['deviceid']?>" );
         amplitude.getInstance().logEvent("Report-View", {"isExpertMode": "<?=($isExpertMode ? true : false)?>"});
         </script>
-        <!-- Yandex.Metrika counter -->
-        <script type="text/javascript" >
-        (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
-        m[i].l=1*new Date();k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
-        (window, document, "script", "https://mc.yandex.ru/metrika/tag.js", "ym");
-
-        ym(87918037, "init", {
-                clickmap:true,
-                trackLinks:true,
-                accurateTrackBounce:true,
-                webvisor:true
-        });
     </script>
     </head>
 <body class="bg-light">
@@ -247,7 +238,7 @@ if ($id = getParamFromUrl($_SERVER['REQUEST_URI'])){
                         <li>Анемометр</li>
                         <li>Уровень строительный (0-1000) мм</li>
                         <li>Комплект ВИК (базовый)</li>
-                        <li>Тепловизор Flir E4</li>
+                        <li>Тепловизор Flir C3</li>
                     </ol>
                 </div>
             </div> 
