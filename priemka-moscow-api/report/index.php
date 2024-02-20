@@ -62,7 +62,7 @@ function formToHtml ($node, $isExpertMode,  $level=1, &$counterThrough=1, $count
         }
         if ($str) {
             if ($node->comment && $level==1) {
-                $comment = count( explode("<br>", $node->comment) ) > 1 ? "<ol type='a'><li>".implode("</li><li>", explode("<br>", $node->comment))."</li></ol>" : $node->comment;
+                $comment = count( explode("<br>", $node->comment) ) > 1 ? "<ul><li>".implode("</li><li>", explode("<br>", $node->comment))."</li></ul>" : $node->comment;
                 $comment =  "<tr class='h6 ms-2 mt-2 mb-0'><td></td><td>Общие недостатки</td><td></td></tr> <tr><td>".$counterThrough++."</td><td>".$comment."</td><td></td></tr>";
             }
             

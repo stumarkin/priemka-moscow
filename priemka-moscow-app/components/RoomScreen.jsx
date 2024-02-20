@@ -348,7 +348,7 @@ export default function RoomScreen ({navigation, route}) {
                                         key="comment"
                                         multiline={true}
                                         numberOfLines={4}
-                                        placeholder="Общие недостатки помещения"
+                                        placeholder="Общие недостатки помещения (вводите с переносом строк для нумерации в акте/заключении)"
                                         maxLength={1000}
                                         onChangeText={(text) => {
                                             setComment(text)
