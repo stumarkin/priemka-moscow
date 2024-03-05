@@ -231,6 +231,20 @@ function updateForm() {
     }
 }
 
+function saveUploadedFile($uploadedFile, $targetFilePath){
+    $saveFileStatus = "";
+    if(empty($uploadedFile['name'])){
+      $saveFileStatus = "File not found";
+    } else if (file_exists($targetFilePath)) {
+      $saveFileStatus = "File already exists";
+    } else if ( $uploadedFile["size"] > 5000000 ) {
+      $saveFileStatus = "File is too large";
+    } else if ( ! move_uploaded_file( $uploadedFile["tmp_name"], $targetFilePath )) {
+      $saveFileStatus = "Error saving file";
+    } 
+  
+    return $saveFileStatus!="" ? $saveFileStatus : true;
+  }
 
 // API ------------------------------------------------------------------------------------------------------------------
 
@@ -312,6 +326,29 @@ if (isset($_GET['method'])) {
         //     echo json_encode( [ 'result' => true, "currentversion" => '1.0.1' ] ); 
         //     break;
         
+        case "uploadfile":
+            mkdir($_SERVER['DOCUMENT_ROOT'].TARGET_FILECV_DIR.$_POST['formid']);
+            $targetFilePath = TARGET_FILECV_DIR.$_POST['formid'].'/'.basename( $_FILES['file']["name"]);
+            $saveFileStatus = saveUploadedFile( $_FILES['file'], $_SERVER['DOCUMENT_ROOT'].$targetFilePath );
+            if ( $saveFileStatus===true ){
+              echo json_encode( Array("result" => true , "uri" => $targetFilePath) );
+            } else {
+              echo json_encode( Array("result" => false , "error" =>  $saveFileStatus, 'post'=>$_POST, 'files'=>$_FILES ) );
+            }
+            break;
+  
+        case "getcustomermodeon":
+            echo json_encode( Array("result" => true ) );
+            break;
+  
+        case "postapplication":
+            echo json_encode( Array("result" => true, 'id' => substr(time(), -5), 'post' => $_POST ) ); 
+            break;
+  
+        case "getapplication":
+            echo json_encode( Array("result" => true, 'id' => $_GET['id'], 'status' => 'Принята. Ожидайте звонка менеджера', 'report' => 'ссылка будет доступна после проведения прёмки'  ) );
+            break;
+  
         default:
             echo json_encode( Array('result' => false, "error" => "Unknown method" ) ); 
             break;
