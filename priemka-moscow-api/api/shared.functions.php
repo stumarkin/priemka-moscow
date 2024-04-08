@@ -11,6 +11,7 @@ function sqlQuery($sql) {
     $result = $conn->query($sql);
     if ($conn->errno>0) return $conn->error;
     if ($conn->insert_id>0) return $conn->insert_id;
+    if (stripos($sql, "delete")) return $conn->affected_rows;
     $conn->close();
     return $result;
 }
@@ -18,6 +19,20 @@ function sqlQuery($sql) {
 function getDateTimeNow ($format = 'Y-m-d\TH:i:s.u'){
     $d = new DateTime('NOW');
     return $d->format($format);
+}
+
+function getDateTimeAfterDays ($days, $format = 'Y-m-d\TH:i:s.u'){
+    $d = new DateTime('+'.$days.' days');
+    $d->setTime(23, 59, 59, 999999);
+    return $d->format($format);
+}
+
+function getDateAfter1Month() {
+    $currentDateTime = new DateTime();
+    $currentDateTime->modify('+1 month');
+    $currentDateTime->setTime(23, 59, 59, 999999);
+    $formattedDateTime = $currentDateTime->format('Y-m-d\TH:i:s.u');
+    return $formattedDateTime;
 }
 
 function escapeCharsInString ($str) {
@@ -93,6 +108,23 @@ function amplitudeSendEvent ($form_id, $event_name){
         debuglog ("amplitude_send_event", 'request error');
      }
     
+    return $result;
+}
+
+function send_email($to, $subject, $message, $from_email = 'support@priemka-pro.ru', $from_name = 'Приёмка Про') {
+    // Заголовки письма
+    $headers = "From: $from_name <$from_email>\r\n";
+    $headers .= "Reply-To: $from_email\r\n";
+    $headers .= "MIME-Version: 1.0\r\n";
+    $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
+
+    // Дополнительные параметры
+    $additional_parameters = "-f $from_email";
+
+    // Отправка письма
+    // $result = mail($to, $subject, $message, $headers, $additional_parameters);
+    $result = mail('stumarkin@mail.ru', $subject, $message, $headers, $additional_parameters);
+
     return $result;
 }
 
