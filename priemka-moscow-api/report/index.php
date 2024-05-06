@@ -63,7 +63,7 @@ function getName( $obj, $isExpertMode ) {
         $td1 = $dictionary[$obj->id]["report"].$comment.$image;
         $td2 = $isExpertMode ? $dictionary[$obj->id]["clause"] : "";
     } else {
-        $td1 = ($obj->name ? $obj->name : $dictionary[ ($obj->templateId ? $obj->templateId : $obj->id) ]['name']).$comment.$image;
+        $td1 = ($obj->name ? $obj->name : $dictionary[ ($obj->templateId ? $obj->templateId : $obj->id) ]['name']).$image;
     }
     return !$isExpertMode ? "<td colspan=2>".$td1."</td>" : "<td>".$td1."</td><td>".$td2."</td>";
 }
