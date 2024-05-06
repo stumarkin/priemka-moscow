@@ -147,7 +147,6 @@ const getTimeElapsed = ( timestamp ) => {
 }
 
 
-
 export default function HomeScreen ({navigation, route}) {
     const { 
         authtoken,
