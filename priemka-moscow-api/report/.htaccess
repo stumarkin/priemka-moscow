@@ -3,4 +3,6 @@ php_flag display_errors on
 php_flag html_errors on
 
 RewriteEngine On
-RewriteRule ^(.*)$ index.php
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php [L,QSA]
