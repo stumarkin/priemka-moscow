@@ -1,9 +1,10 @@
-config.php
-aws/*
-source/*
+api/config.php
+api/aws/*
+api/source/*
+*log/*
 
+.vscode
 
-# macOS
 .DS_Store
 
 # Temporary files created by Metro to check the health of the file watcher
