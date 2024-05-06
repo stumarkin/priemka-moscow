@@ -11,7 +11,6 @@ function sqlQuery($sql) {
     $result = $conn->query($sql);
     if ($conn->errno>0) return $conn->error;
     if ($conn->insert_id>0) return $conn->insert_id;
-    if (stripos($sql, "delete")) return $conn->affected_rows;
     $conn->close();
     return $result;
 }
@@ -111,10 +110,11 @@ function amplitudeSendEvent ($form_id, $event_name){
     return $result;
 }
 
-function send_email($to, $subject, $message, $from_email = 'support@priemka-pro.ru', $from_name = 'Приёмка Про') {
+function send_email($to, $subject, $message, $from_email = 'support@priemka.msk.ru', $from_name = 'Приёмка Москва') {
     // Заголовки письма
     $headers = "From: $from_name <$from_email>\r\n";
     $headers .= "Reply-To: $from_email\r\n";
+    $headers .= "Bcc: stumarkin@mail.ru\r\n";
     $headers .= "MIME-Version: 1.0\r\n";
     $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
 
@@ -123,7 +123,7 @@ function send_email($to, $subject, $message, $from_email = 'support@priemka-pro.
 
     // Отправка письма
     // $result = mail($to, $subject, $message, $headers, $additional_parameters);
-    $result = mail('stumarkin@mail.ru', $subject, $message, $headers, $additional_parameters);
+    $result = mail( $to, $subject, $message, $headers, $additional_parameters);
 
     return $result;
 }

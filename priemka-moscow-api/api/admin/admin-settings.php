@@ -138,9 +138,8 @@ function getTemplates( $authtoken ) {
         JOIN form_templates ft ON ft.accountid = ac.id
         JOIN users u ON ac.id = u.accountid
         JOIN auth au ON u.id = au.userid
-        WHERE 
-            au.token = '{$authtoken}' 
-        ORDER BY id DESC
+        WHERE au.token = '{$authtoken}' OR ft.id = 1
+        ORDER BY ft.id DESC
         LIMIT 100"
     );
     if ($result->num_rows > 0) {
@@ -153,7 +152,7 @@ function getTemplates( $authtoken ) {
     }
 }
 
-function updateFormTemplate($authtoken){
+function updateFormTemplate($authtoken, $source, $dictionary, $form){
     $result = sqlQuery(
         "SELECT ac.googlesheets_csv, ac.id
         FROM accounts ac
@@ -181,9 +180,38 @@ function updateFormTemplate($authtoken){
             $content = file_get_contents($googlesheets_csv);
             $file_put_result = file_put_contents( $filepath, $content );
             if ( $file_put_result ){
-                return sqlQuery("INSERT 
-                                INTO form_templates (accountid, file_path, date_insert) 
-                                VALUES ('{$accountid}', '{$filepath}', '".getDateTimeNow()."')");
+                $template_id = sqlQuery("INSERT INTO form_templates (accountid, file_path, date_insert, is_active)
+                                        SELECT u.accountid, '{$filepath}', '".getDateTimeNow()."', 0
+                                        FROM users u
+                                        JOIN auth a ON a.userid = u.id
+                                        WHERE a.token = '{$authtoken}'");
+                $root = $_SERVER['DOCUMENT_ROOT'];
+                $account_dir = TARGET_ACCOUNTFILE_DIR.$accountid;
+                $templates_dir = $account_dir.'/templates';
+                $target_dir = $templates_dir.'/'.$template_id;
+                $source_path = $target_dir.'/source.json';
+                $dictionary_path = $target_dir.'/dictionary.json';
+                $form_path= $target_dir.'/form.json';
+
+                if (!(is_dir($root.$account_dir) || mkdir($root.$account_dir))){
+                    $status = "Error mkdir {$root}{$account_dir}";
+                } else if (!(is_dir($root.$templates_dir) || mkdir($root.$templates_dir))){
+                    $status = "Error mkdir {$root}{$target_dir}";
+                } else if (!(is_dir($root.$target_dir) || mkdir($root.$target_dir))){
+                    $status = "Error mkdir {$root}{$target_dir}";
+                } else if (
+                        file_put_contents( $root.$source_path, $source ) &&
+                        file_put_contents( $root.$dictionary_path, $dictionary ) &&
+                        file_put_contents( $root.$form_path, str_replace("{formTemplateVersion}", $template_id, $form) )
+                    ){
+                    sqlQuery(
+                        "UPDATE form_templates 
+                        SET is_active = 1, source_path='{$source_path}', dictionary_path='{$dictionary_path}', form_path='{$form_path}'
+                        WHERE id='{$template_id}'"
+                    );
+                }
+
+                return $template_id;
             } else {
                 return $file_put_result ;
             }

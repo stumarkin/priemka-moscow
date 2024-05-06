@@ -3,8 +3,8 @@
  * @author Sergey Tumarkin https://tumarkin.me
  */
 
- function addUser( $authtoken, $username, $fio, $password ) {
-    // $password = substr(md5(time()), 0, 8);
+ function addUser( $authtoken, $username, $fio ) {
+    $password = substr(md5(time()), 0, 8);
     $password_hash = md5($password);
     $result = sqlQuery(
         "INSERT 
@@ -16,7 +16,12 @@
             LIMIT 1"
     );
     if ($result) {
-        send_email( "stumarkin@mail.ru", "Вы добавлены в Приёмка Про ", "{$username} / {$password}"); 
+        $content = file_get_contents('./mail_template_user_added.html');
+        $content = str_replace("%password%", $password, $content );
+        $content = str_replace("%username%", $username, $content );
+        $content = str_replace("%name%", $name, $content );
+        send_email( "stumarkin@mail.ru", "Вас добавили к компании", $content); 
+        botSendMessage( "New account ".$name." ".$username." / ".$password, '4371506' );
         return $result;
     } else {
         return false;
@@ -56,6 +61,7 @@ function getUser( $authtoken, $id ) {
             u.username, 
             u.equipment, 
             u.userfiles, 
+            u.facsimile, 
             u.is_admin, 
             u.date_insert, 
             u.last_login, 
@@ -127,18 +133,19 @@ function removeUserFile( $authtoken, $userid, $userfiles, $filetoremove ) {
     }
 }
 
-function postUserFiles( $authtoken, $userid, $files_json ) {
+function postUserFiles( $authtoken, $userid, $files_json, $type = 'userfiles' ) {
     return sqlQuery(
         "UPDATE users u
         JOIN users u2 ON u2.accountid = u.accountid 
         JOIN auth ON u2.id = auth.userid
         SET 
-            u.userfiles = '".$files_json."'
+            u.{$type} = '{$files_json}'
         WHERE 
-            auth.token = '".$authtoken."'
-            AND u.id = '".$userid."'"
+            auth.token = '{$authtoken}'
+            AND u.id = '{$userid}'"
     );
 }
+
 
 function RecoveryPasswordRequest( $username ) {
     $password_recovery_hash = md5(time()."safdvasd");
@@ -177,7 +184,7 @@ function ChangePassword( $password_recovery_hash, $password ) {
     }
 }
 
-function saveUploadedUserFile( $authtoken, $userid, $filename, $file) {
+function saveUploadedUserFile( $authtoken, $userid, $filename, $file, $type) {
     // if $type == "attachment" then save to cusctom dir and support multifiles.
     $accountid = getAccountIdByAuthtoken($authtoken);
     $root = $_SERVER['DOCUMENT_ROOT'];
@@ -201,15 +208,22 @@ function saveUploadedUserFile( $authtoken, $userid, $filename, $file) {
     } else if ( !move_uploaded_file( $file["tmp_name"], $root.$target_dir.$filename ) ){
         $status = "Error move_uploaded_file {$root}{$target_dir}{$filename}";
     } else {
-
-        $files_json = getUserFiles($authtoken, $userid);
-        $files = json_decode($files_json);
-        $files[] = $target_dir.$filename;
-        $files_json = json_encode($files);
-        if (postUserFiles($authtoken, $userid, $files_json)){
-            return $files_json;
+        if ($type){
+            if (postUserFiles($authtoken, $userid, $target_dir.$filename, $type)){
+                return $target_dir.$filename;
+            } else {
+                return false;
+            }
         } else {
-            return false;
+            $files_json = getUserFiles($authtoken, $userid);
+            $files = json_decode($files_json);
+            $files[] = $target_dir.$filename;
+            $files_json = json_encode($files);
+            if (postUserFiles($authtoken, $userid, $files_json)){
+                return $files_json;
+            } else {
+                return false;
+            }
         }
     } 
     return false;

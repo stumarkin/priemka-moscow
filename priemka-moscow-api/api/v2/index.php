@@ -59,6 +59,23 @@ function getSourceContent( $vesion = ''){   // returns [ "content", "vesion" ]
     return false;
 }
 
+function getCurrentTemplateVersion( $authtoken ){   // returns vesion : integer
+    $select_result = sqlQuery(
+        "SELECT ft.id
+        FROM form_templates ft
+        JOIN users u ON ft.accountid = u.accountid
+        JOIN auth a ON u.id = a.userid
+        WHERE a.token = '".$authtoken."' AND is_active = '1' 
+        ORDER BY ft.date_insert DESC"
+    );
+    if ($select_result->num_rows > 0) { 
+        $select_result_row = $select_result->fetch_assoc();
+        return $select_result_row["id"];
+    } else {
+        return false;
+    }
+}
+
 function getDictionary( $sourceContent ){
     $dictionary = Array();
     foreach ($sourceContent as $sourceContentRow){
@@ -93,37 +110,58 @@ function makeTokenWithKey( $str ) {
     return md5( TOKEN_KEY.$str );
 }
 
-function signIn( $username, $password, $deviceid=' ') {
-    $select_result = sqlQuery("SELECT id, is_admin FROM users WHERE username = '".$username."' AND password_hash = '".$password."' LIMIT 1");
+// deprecated
+// function signIn( $username, $password, $deviceid=' ') {
+//     $select_result = sqlQuery("SELECT id, is_admin FROM users WHERE username = '".$username."' AND password_hash = '".$password."' LIMIT 1");
+//     if ($select_result->num_rows > 0) { 
+//         $row = $select_result->fetch_assoc();
+//         if (sqlQuery("UPDATE users 
+//                     SET last_login = '".getDateTimeNow()."',
+//                     deviceid = '".$deviceid."'
+//                     WHERE id = '".$row["id"]."' LIMIT 1")){
+//                         return $row;
+//                     }
+    
+//     };
+//     return false;
+// }
+
+function logIn( $username, $password, $deviceid=' ') {
+    $select_result = sqlQuery("SELECT id FROM users WHERE username = '".$username."' AND password_hash = '".$password."' LIMIT 1");
     if ($select_result->num_rows > 0) { 
         $row = $select_result->fetch_assoc();
-        if (sqlQuery("UPDATE users 
-                    SET last_login = '".getDateTimeNow()."',
-                    deviceid = '".$deviceid."'
-                    WHERE id = '".$row["id"]."' LIMIT 1")){
-                        return $row;
-                    }
-    
-    };
-    return false;
-}
-
-function isProDaysLeft( $deviceid) {
-    $result = sqlQuery("SELECT id, date_plan_end FROM billing WHERE deviceid = '".$deviceid."' AND paid=1 AND date_plan_end > '".getDateTimeNow()."' ORDER BY date_plan_end DESC");
-    if ($result->num_rows > 0) { 
-        while($row = $result->fetch_assoc()) {
-            $date1 = new DateTime("NOW");
-            $date2 = new DateTime($row["date_plan_end"]);
-            $interval = $date1->diff($date2);
-            return  $interval->days;
+        $userid = $row["id"];
+        $token = md5(time());
+        if (sqlQuery("INSERT INTO auth (userid, token, date_insert, valid_till, deviceid) VALUES ('".$userid."', '".$token."', '".getDateTimeNow()."', '".getDateTimeAfterDays(AUTH_DAYS)."', '".$deviceid."')")){
+            return $token;
         }
-    } 
+    }
     return false;
 }
 
-function getForms( $userid ) {
+// deprecated
+// function isProDaysLeft( $deviceid) {
+//     $result = sqlQuery("SELECT id, date_plan_end FROM billing WHERE deviceid = '".$deviceid."' AND paid=1 AND date_plan_end > '".getDateTimeNow()."' ORDER BY date_plan_end DESC");
+//     if ($result->num_rows > 0) { 
+//         while($row = $result->fetch_assoc()) {
+//             $date1 = new DateTime("NOW");
+//             $date2 = new DateTime($row["date_plan_end"]);
+//             $interval = $date1->diff($date2);
+//             return  $interval->days;
+//         }
+//     } 
+//     return false;
+// }
+
+function getForms( $authtoken ) {
     $forms = [];
-    $result = sqlQuery("SELECT id, address, failChecksCountTotal, date_update, apartment_num, customer  FROM forms WHERE userid = '".$userid."' ORDER BY date_update DESC");
+    $result = sqlQuery(
+        "SELECT f.id, f.address, f.failChecksCountTotal, f.date_update, f.apartment_num, f.customer 
+        FROM forms f
+        JOIN auth a ON f.userid = a.userid
+        WHERE a.token = '".$authtoken."'
+        ORDER BY f.date_insert DESC"
+    );
     if ($result->num_rows > 0) { 
         while($row = $result->fetch_assoc()) {
             $forms[] = [
@@ -139,74 +177,85 @@ function getForms( $userid ) {
     return $forms;
 }
 
-function getServicesWebviewContent( $id ) {
-    $result = sqlQuery("SELECT * FROM banners WHERE screen = 'services' AND id = '".$id."'");
+function getForm( $id, $authtoken) {
+    if (!$id) return false;
+    $result = sqlQuery(
+        "SELECT f.* 
+        FROM forms f
+        JOIN auth a ON f.userid = a.userid
+        WHERE a.token = '".$authtoken."'  AND f.id='".$id."'
+        ORDER BY f.date_insert DESC
+        LIMIT 1"
+    );
     if ($result->num_rows > 0) { 
-        while($row = $result->fetch_assoc()) {
-            return [
-                'id' =>  $row["id"],
-                'screen' =>  $row["screen"],
-                'section' =>  $row["section"],
-                'header' =>  $row["header"],
-                'text' =>  $row["text"],
-                'backgroundImage' =>  $row["background_image"],
-                'backgroundColor' =>  $row["background_color"],
-                'textColor' =>  $row["text_color"],
-                'webviewContentHtml' =>  $row["webview_content_html"],
-                'webviewCtaUrl' =>  $row["webview_cta_url"],
-            ];
-        };
-    };
-    return false;
-}
-
-function makeForm() {
-    if (isset($_GET['id'])){
-        $result = sqlQuery("SELECT form FROM forms WHERE id = '".$_GET['id']."'");
-        if ($result->num_rows > 0) { 
-            while($row = $result->fetch_assoc()) {
-                $form = $row["form"];
-            }
-        } 
-        return $form;
+        $row = $result->fetch_assoc();
+        return $row["form"];
     } else {
-        $sourceContent = getSourceContent();
-
-        $id = substr(md5(time()), 0, 9);
-        $token = makeTokenWithKey( $id );
-        $form = Array(
-            "id" => $id,
-            "token" => $token,
-            "deviceid" => "",
-            "address" => "", 
-            "formTemplateVersion" => $sourceContent["version"],
-            "apartment" => Array(),
-            "nested_templates" => Array() 
-        );
-        
-        // важна последовательность добавления в массив - она равна последовательности в анкете
-        foreach($sourceContent["content"] as $row){
-          $form['nested_templates'][] = makeQuestion( 
-            $row["ParentCode"], 
-            $row["Code"], 
-            $row["Type"], 
-            $row["DefaultSectionsCodes0"], 
-            $row["DefaultSectionsCodes1"], 
-            $row["DefaultSectionsCodes2"], 
-          );
-        }
-
-        return json_encode($form);
+        return false;
     }
+}
+
+function deleteForm( $id, $authtoken) {
+    if (!$id) return false;
+    return sqlQuery(
+        "DELETE f
+        FROM forms f
+        JOIN auth a ON f.userid = a.userid
+        WHERE a.token = '".$authtoken."'  AND f.id='".$id."'"
+    );
+}
+
+function checkFormIdExists( $id ){
+    $result = sqlQuery("SELECT id FROM forms WHERE id = '".$id."' LIMIT 1");
+    return $result->num_rows > 0;
+}
+
+function createForm( $authtoken ){ // returns {id, token)
+    $flagIdExists = true;
+    do {
+        $id = substr(md5(time()), 0, 5);
+        $token = makeTokenWithKey( $id );
+        $flagIdExists = checkFormIdExists($id);
+    } while ($flagIdExists);
     
+    // $result = sqlQuery("INSERT INTO forms (id, date_insert, userid) VALUES ('".$id."', '".getDateTimeNow()."', '".$_POST['userid']."')");
+    $result = sqlQuery(
+        "INSERT INTO forms (id, date_insert, userid)
+        SELECT '".$id."', '".getDateTimeNow()."', a.userid
+        FROM auth a
+        WHERE a.token = '".$authtoken."'"
+    );
+    return $result ? [ 'id' => $id, 'token' => $token ] : false;
 }
 
-function getDateTimeAfterDays ($days, $format = 'Y-m-d\TH:i:s.u'){
-    $d = new DateTime('+'.$days.' days');
-    return $d->format($format);
+
+function getTemplateForm( $sourceContent ) {
+    $form = Array(
+        "id" => "",
+        "token" => "",
+        "deviceid" => "",
+        "address" => "", 
+        "formTemplateVersion" => $sourceContent["version"],
+        "apartment" => Array(),
+        "nested_templates" => Array() 
+    );
+    
+    // важна последовательность добавления в массив - она равна последовательности в анкете
+    foreach( $sourceContent["content"] as $row ){
+        $form['nested_templates'][] = makeQuestion( 
+                                            $row["ParentCode"], 
+                                            $row["Code"], 
+                                            $row["Type"], 
+                                            $row["DefaultSectionsCodes0"], 
+                                            $row["DefaultSectionsCodes1"], 
+                                            $row["DefaultSectionsCodes2"], 
+                                        );
+    }
+
+    return $form;
 }
 
-function updateForm() {
+function updateForm_deprecated() {
     $userid = $_POST['userid'];
     $form = json_decode($_POST['form']);
     $summary = json_decode($_POST['summary']);
@@ -214,21 +263,38 @@ function updateForm() {
     $formInDB = sqlQuery("SELECT id FROM forms WHERE id='".$form->id."';");
     if ($formInDB->num_rows > 0) {
             $result = sqlQuery("UPDATE forms 
-                             SET form = '".$_POST['form']."',
-                                userid = '".$userid."',
-                                deviceid = '".$form->deviceid."',
-                                address = '".$summary->address."',
-                                apartment_num = '".$summary->apartmentNum."',
-                                customer = '".$summary->customer."',
-                                checksCountTotal = '".$summary->checksCountTotal."',
-                                failChecksCountTotal = '".$summary->failChecksCountTotal."',
-                                date_update = '".getDateTimeNow()."'
-                             WHERE id = '".$form->id."' LIMIT 1;");
+                                SET form = '".$_POST['form']."',
+                                    userid = '".$userid."',
+                                    deviceid = '".$form->deviceid."',
+                                    address = '".$summary->address."',
+                                    apartment_num = '".$summary->apartmentNum."',
+                                    customer = '".$summary->customer."',
+                                    checksCountTotal = '".$summary->checksCountTotal."',
+                                    failChecksCountTotal = '".$summary->failChecksCountTotal."',
+                                    date_update = '".getDateTimeNow()."'
+                                WHERE id = '".$form->id."' LIMIT 1;");
         return Array("method" => "update", "result" => $result);
     } else {
         $result = sqlQuery("INSERT INTO forms (id, form, date_insert) VALUES ('".$form->id."', '".$_POST['form']."', '".getDateTimeNow()."')");
         return Array("method" => "insert", "result" => $result);
     }
+}
+
+function updateForm($id, $form_json, $summary_json) {
+    $userid = $_POST['userid'];
+    $form = json_decode($form_json);
+    $summary = json_decode($summary_json);
+    return sqlQuery("UPDATE forms 
+                        SET form = '".$form_json."',
+                            deviceid = '".$form->deviceid."',
+                            address = '".$summary->address."',
+                            apartment_num = '".$summary->apartmentNum."',
+                            customer = '".$summary->customer."',
+                            checksCountTotal = '".$summary->checksCountTotal."',
+                            failChecksCountTotal = '".$summary->failChecksCountTotal."',
+                            date_update = '".getDateTimeNow()."'
+                        WHERE id = '".$id."' 
+                        LIMIT 1;");
 }
 
 function saveUploadedFile($uploadedFile, $targetFilePath){
@@ -251,23 +317,38 @@ function saveUploadedFile($uploadedFile, $targetFilePath){
 
 
 if (isset($_GET['method'])) {
+    $authtoken = $_GET['authtoken'];
     switch ($_GET['method']) {
         case "ping":
             echo json_encode( ["result"=> 'pong']);
             break;
 
-        case "signin":
-            $user = signIn($_POST['username'], $_POST['password'], $_POST['deviceid'],);
-            echo json_encode( $user ? ["result"=>true, "user" => $user, "signedintimeoutdays" => 1 ] : ["result"=>false] );
+        case "login":
+            $token = logIn($_POST['username'], $_POST['password'], $_POST['deviceid'],);
+            echo json_encode( ["result"=>$token!==false, "authtoken" => $token] );
+            break;
+        
+        case "auth":
+            echo json_encode( ["result" => true] );
             break;
 
-        case "getdictionary":
-            $sourceContent = getSourceContent();
-            echo json_encode( getDictionary( $sourceContent["content"] ) );
+        case "gettemplate":
+            if ($_GET['localversion']){
+                $localVersion = $_GET['localversion'];
+                $currentTemplateVersion = getCurrentTemplateVersion( $authtoken );
+                if ($currentTemplateVersion > $localVersion){
+                    $sourceContent = getSourceContent( $currentTemplateVersion );
+                    $template = [ "version" => $currentTemplateVersion, "dictionary" => getDictionary( $sourceContent["content"] ), "form" => getTemplateForm( $sourceContent ) ];
+                }
+                echo json_encode( ["result" => $currentTemplateVersion!=false, "needtoupdate" => $currentTemplateVersion > $localVersion, "template" => $template ] );
+            } else {
+                echo json_encode( ["result" => false , "error" => "What is local version?" ] );
+            }
             break;
 
         case "getform":
-            echo makeForm(); 
+            $form = getForm( $_GET['id'], $authtoken);
+            echo json_encode( ['result'=> $form!==false, 'form' => $form ] );
             break;
 
         case "getbanners":
@@ -276,55 +357,45 @@ if (isset($_GET['method'])) {
             break;
 
         case "getforms":
-            $forms = getForms($_GET['userid']);
-            echo json_encode( ['result'=> count($forms)>0, 'forms' => $forms, 'GET' => $_GET ] );
+            $forms = getForms( $authtoken );
+            echo json_encode( ['result'=> count($forms)>0, 'forms' => $forms ] );
             break;
-        case "getserviceswebviewcontent":
-            if (is_numeric($_GET['id'])){
-                $banner_content = getServicesWebviewContent( intval($_GET['id']) );
-                echo json_encode( ['result' => boolval($banner_content), 'content' => $banner_content ] );
-            } else {
-                echo json_encode( ['result' => false, 'error' => 'Unexpected id' ] );
-            }
-            break;
-        // case "prodaysleft":
-        //     $devicesIdToclearAsyncStorageForms = 'no';
-        //     echo json_encode( [ 'result' =>  true, 'deviceid' => $_GET['deviceid'], 'ProDaysLeft' => isProDaysLeft($_GET['deviceid']), 'clearAsyncStorageForms' => ($devicesIdToclearAsyncStorageForms==$_GET['deviceid'] ? true : false)] );
-        //     break;
 
-        case "setform":
-            $form = json_decode($_POST['form']);
-            if (makeTokenWithKey($form->id) == $form->token){
-                echo json_encode(  updateForm() ); 
-            } else {
-                echo json_encode( Array("error" => "Token validation fail") ); 
-            }
+        case "createform":
+            $newForm = createForm( $authtoken );
+            echo json_encode( ['result'=> $newForm!==false, 'id' => $newForm['id'], 'token' => $newForm['token'] ] );
             break;
+
+        case "updateform":
+            $result = updateForm($_POST['id'], $_POST['form'], $_POST['summary']);
+            echo json_encode( ['result'=> $result!==false, 'id' => $_POST['id']] );
+            break;
+        
         case "deleteform":
-            if (makeTokenWithKey($_GET['id']) == $_GET['token']){
-                echo json_encode( ['result' => sqlQuery('DELETE FROM forms WHERE id = "'.$_GET['id'].'" LIMIT 1;'), "request" => $_GET] ); 
-            } else {
-                echo json_encode( Array("error" => "Token validation fail") ); 
-            }
+            $result = deleteForm( $_GET['id'], $authtoken);
+            echo json_encode( ['result' => $result] ); 
             break;
-        case "needupdate":
-            $currentversion = [
-                'android' => '1.0.1', 
-                'ios' => '1.0.0'
+
+        case "getconfig":
+            $designtypes = [
+                'С чистовой отделкой',
+                'White-box',
+                'Без отделки'
             ];
-            $appupdateurls = [
-                'android' => 'https://apps.rustore.ru/app/com.stumarkin.priemkapro', 
-                'ios' => ''
+            $appupdateurl = false;
+            $featuretoggles = [
+                'offlinemode' => false,
+                'photo' => false,
             ];
-            if ($currentversion[$_GET['platform']] != $_GET['appversion']){
-                $appupdateurl = $appupdateurls[$_GET['platform']];
-            }
-            echo json_encode( [ 'result' => false, "appupdateurl" => $appupdateurl ] ); 
-            // echo json_encode( [ 'result' => ($appupdateurl!=''), "appupdateurl" => $appupdateurl ] ); 
+            echo json_encode([ 
+                'result' => true, 
+                "designtypes" => $designtypes, 
+                "appupdateurl" => $appupdateurl, 
+                "featuretoggles" => $featuretoggles, 
+                "get" => $_GET 
+            ]); 
+            // http_response_code(404);
             break;
-        // case "getcurrentversion":
-        //     echo json_encode( [ 'result' => true, "currentversion" => '1.0.1' ] ); 
-        //     break;
         
         case "uploadfile":
             mkdir($_SERVER['DOCUMENT_ROOT'].TARGET_FILECV_DIR.$_POST['formid']);
@@ -338,7 +409,7 @@ if (isset($_GET['method'])) {
             break;
   
         case "getcustomermodeon":
-            echo json_encode( Array("result" => true ) );
+            echo json_encode( Array("result" => false ) );
             break;
   
         case "postapplication":

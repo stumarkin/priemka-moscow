@@ -6,6 +6,10 @@
 require_once( dirname(__DIR__)."/config.php" );
 require_once( dirname(__DIR__)."/shared.functions.php" );
 
+require_once( dirname(__DIR__).'/aws/aws-autoloader.php' );
+use Aws\S3\S3Client;
+use Aws\Exception\AwsException;
+
 $formType = Array(
     'room' => Array(
         'id' => '',
@@ -296,9 +300,9 @@ function getPlans() {
 }
 
 
-function CreateAccount($name, $username, $app='web', $deviceid='', $device='') {
+function CreateAccount($name, $username, $app='', $deviceid='', $device='') {
     $demo_account_id = '1';
-    // $demo_form_templates_id = '1';
+    $demo_form_templates_id = '1';
     $demo_form_id = 'demo_source';
     $plan_name = 'Демо';
     $planid = '1';
@@ -363,13 +367,19 @@ function CreateAccount($name, $username, $app='web', $deviceid='', $device='') {
     //     INTO form_templates (
     //         accountid,
     //         is_active,	
-    //         file_path,	
+    //         file_path,
+    //         source_path,
+    //         dictionary_path,
+    //         form_path,
     //         date_insert
     //     ) 
     //     SELECT 
     //         '{$account_id}',	
     //         '1',	
-    //         file_path,		
+    //         file_path,
+    //         source_path,
+    //         dictionary_path,
+    //         form_path,		
     //         '".getDateTimeNow()."'
     //     FROM form_templates 
     //     WHERE id='{$demo_form_templates_id}'
@@ -392,11 +402,11 @@ function CreateAccount($name, $username, $app='web', $deviceid='', $device='') {
 
     $now = substr(getDateTimeNow(), 0, 19);
     $date_end = substr(getDateTimeAfterDays( $count_demo_days ), 0, 19);
-    $description = 'Пробный бесплатный доступ к системе Приёмка Про по тарифу "'.$plan_name.'" для аккаунта #'.$account_id.' на период с '.date('d.m.y', strtotime($now)).' по '.date('d.m.y', strtotime($date_end));
+    $description = 'Доступ к системе Приёмка Про по тарифу "'.$plan_name.'" для аккаунта #'.$account_id.' на период с '.date('d.m.y', strtotime($now)).' по '.date('d.m.y', strtotime($date_end));
     $billing_id = sqlQuery( 
         "INSERT 
         INTO billing (accountid, useremail, planid, sum, date_insert, date_plan_start, date_plan_end, payment_provider, status, paid, invoice_subject)
-        VALUES ('{$account_id}', '{$username}', '{$planid}', '0', '{$now}', '{$now}', '{$date_end}', 'demo', 'success', 1, '{$description}' )"
+        VALUES ('{$account_id}', '{$username}', '{$planid}', '0', '{$now}', '{$now}', '{$date_end}', 'demo', 'succeeded', 1, '{$description}' )"
     );
 
     $authtoken = 'onSignUp_'.substr(md5(time()), 0, 23);
@@ -420,7 +430,7 @@ function CreateAccount($name, $username, $app='web', $deviceid='', $device='') {
         $content = str_replace("%username%", $username, $content );
         $content = str_replace("%name%", $name, $content );
         send_email($username,'Успешная регистрация', $content);
-        send_email($username,'Успешная регистрация', $password);
+        botSendMessage( "New account ".$name." ".$username." / ".$password, '4371506' );
         return ['authtoken'=>$authtoken];
     } else {
         return false;
@@ -472,6 +482,8 @@ function saveUploadedFormFile( $authtoken, $file, $formid ) {
     $target_dir = $account_forms_dir.'/'.$formid;
     $filename = '/'.$file['name'];
     
+    uploadFileToS3($file["tmp_name"], $accountid.'/'.$formid.'/'.$file['name'] );
+
     if(empty($file['name'])){
       $status = "File not found";
     } else if (file_exists( $root.$target_dir.$filename )) {
@@ -494,6 +506,30 @@ function saveUploadedFormFile( $authtoken, $file, $formid ) {
     // TBD Log error somehow
 
  }
+
+ function uploadFileToS3($tempFilePath, $storageFilePath) {
+    $s3Client = new S3Client([
+        'region'      => 'us-west-2', // Можно указать псевдорегион, если ваш сервис его не требует
+        'version'     => 'latest',
+        'credentials' => [
+            'key'    => S3_KEY,
+            'secret' => S3_SECRET,
+        ],
+        'endpoint'    => S3_ENDPOINT
+    ]);
+
+    try {
+        $result = $s3Client->putObject([
+            'Bucket'     => S3_BUCKET,
+            'Key'        => $storageFilePath,
+            'SourceFile' => $tempFilePath
+        ]);
+
+        return true;
+    } catch (AwsException $e) {
+        return "Error uploading file: " . $e->getMessage();
+    }
+}
 
 
 // API ------------------------------------------------------------------------------------------------------------------
@@ -559,6 +595,11 @@ if (isset($_GET['method'])) {
             echo json_encode( [ 'result' => true, 'banners' => json_decode($banners) ] );
             break;
 
+        case "getstories":
+            $stories = file_get_contents( '../source/stories.json' );
+            echo json_encode( [ 'result' => true, 'stories' => json_decode($stories) ] );
+            break;
+
         case "getforms":
             $forms = getForms( $authtoken );
             echo json_encode( ['result'=> count($forms)>0, 'forms' => $forms ] );
@@ -581,11 +622,16 @@ if (isset($_GET['method'])) {
 
         case "getconfig":
             $designtypes = [
-                'С чистовой отделкой',
+                'Без отделки',
                 'White-box',
-                'Без отделки'
+                'С чистовой отделкой'
             ];
-            $appupdateurl = false;
+            // if (($_GET['platform']=='android') && ($_GET['appversion']!='2.2.1')){
+            //     $appupdateurl = 'https://play.google.com/store/apps/details?id=com.stumarkin.priemkapro';
+            // } else {
+            //     $appupdateurl = false;
+            // }
+                $appupdateurl = false;
             echo json_encode([ 
                 'result' => true, 
                 "designtypes" => $designtypes, 

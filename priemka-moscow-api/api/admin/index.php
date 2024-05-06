@@ -42,7 +42,9 @@ function logIn( $username, $password, $deviceid=' ') {
 }
 
 
-function getForms( $authtoken, $search, $startDate, $endDate ) {
+function getForms( $authtoken, $search, $startDate, $endDate, $offset ) {
+    $limit = 20;
+    $offset = $offset * $limit;
     $result = sqlQuery(
         "SELECT f.id, f.userid, u1.fio, f.address, f.checksCountTotal, f.failChecksCountTotal, f.date_insert, f.apartment_num, f.customer 
         FROM forms f
@@ -50,16 +52,17 @@ function getForms( $authtoken, $search, $startDate, $endDate ) {
         JOIN users u2 ON u2.accountid = u1.accountid 
         JOIN auth ON u2.id = auth.userid 
         WHERE 
-            auth.token = '".$authtoken."'
+            auth.token = '{$authtoken}'
             AND (
-                f.address LIKE '%".$search."%' 
-                OR f.customer LIKE '%".$search."%' 
-                OR f.id LIKE '%".$search."%'
+                f.address LIKE '%{$search}%' 
+                OR f.customer LIKE '%{$search}%' 
+                OR f.id LIKE '%{$search}%'
             ) 
-            AND f.date_insert >= '".$startDate."' 
-            AND f.date_insert <= '".$endDate."'
+            AND f.date_insert >= '{$startDate}' 
+            AND f.date_insert <= '{$endDate}'
         ORDER BY f.date_insert DESC 
-        LIMIT 100"
+        LIMIT {$limit}
+        OFFSET {$offset}"
     );
     if ($result->num_rows > 0) { 
         while($row = $result->fetch_assoc()) {
@@ -74,6 +77,24 @@ function getForms( $authtoken, $search, $startDate, $endDate ) {
                 'customer' =>  $row["customer"],
             ];
         };
+    };
+    return $forms;
+}
+
+function getFormsCount( $authtoken) {
+    $result = sqlQuery(
+        "SELECT u1.id,
+            SUM((SELECT COUNT(id) FROM forms WHERE userid IN (u1.id) AND DATEDIFF(NOW(), date_insert)<1)) as count_today,
+            SUM((SELECT COUNT(id) FROM forms WHERE userid IN (u1.id) AND date_insert>=DATE_FORMAT(NOW(), '%Y-%m-01'))) as count_month,
+            SUM((SELECT COUNT(id) FROM forms WHERE userid IN (u1.id) AND DATEDIFF(NOW(), date_insert)<7)) as count_7days,
+            SUM((SELECT COUNT(id) FROM forms WHERE userid IN (u1.id) AND DATEDIFF(NOW(), date_insert)<30)) as count_30days
+        FROM  users u1
+        JOIN users u2 ON u2.accountid = u1.accountid 
+        JOIN auth ON u2.id = auth.userid 
+        WHERE auth.token = '{$authtoken}'"
+    );
+    if ($result->num_rows > 0) { 
+        return $result->fetch_assoc();
     };
     return $forms;
 }
@@ -130,7 +151,7 @@ function getPlans() {
     $result = sqlQuery(
         "SELECT * 
         FROM plans 
-        WHERE is_public = 1 
+        WHERE is_public = 1 and id > 1
         LIMIT 10"
     );
     if ($result->num_rows > 0) { 
@@ -272,7 +293,24 @@ function getDictionary( $sourceContent ){
     return count($dictionary) > 0 ? $dictionary : false;
 }
 
-
+function getDictionaryByVersion( $version ){  
+    $select_result = sqlQuery(
+        "SELECT dictionary_path
+        FROM form_templates
+        WHERE id = '{$version}' 
+        LIMIT 1"
+    );
+    if ($select_result->num_rows > 0) { 
+        $template = $select_result->fetch_assoc();
+        $dictionary_path = $template['dictionary_path'];
+        $dictionary_json = file_get_contents($_SERVER['DOCUMENT_ROOT'].$dictionary_path);
+        $dictionary_arr = json_decode($dictionary_json,true);
+        // $dictionary_arr = (array)$dictionary_obj;
+        return $dictionary_arr;
+    } else {
+        return false;
+    }
+}
 
 // API ------------------------------------------------------------------------------------------------------------------
 
@@ -293,8 +331,13 @@ if (isset($_GET['method'])) {
             break;
        
         case "getforms":
-            $forms = getForms($_GET['authtoken'], $_GET['search'],$_GET['startDate'],$_GET['endDate'] );
+            $forms = getForms($_GET['authtoken'], $_GET['search'],$_GET['startDate'],$_GET['endDate'],$_GET['offset'] );
             echo json_encode( ['result'=> count($forms)>0, 'forms' => $forms] );
+            break;
+            
+        case "getformscount":
+            $formscount = getFormsCount($_GET['authtoken'] );
+            echo json_encode( ['result'=> count($formscount)>0, 'formscount' => $formscount] );
             break;
 
         case "getform":
@@ -378,8 +421,10 @@ if (isset($_GET['method'])) {
 
 
         case "updatetemplate":
-            $result = updateFormTemplate($_GET['authtoken']); 
-            echo json_encode( ['result'=> $result!==false] );
+            // $result = updateFormTemplate($_GET['authtoken']); 
+            $template_id = updateFormTemplate($_GET['authtoken'], $_POST['source'], $_POST['dictionary'], $_POST['form']); 
+
+            echo json_encode( ['result' => $template_id!==false, 'template_id' => $template_id, 'dictionary' => $_POST['dictionary']] );
             break;
 
         case "reversetemplate":
@@ -434,6 +479,7 @@ if (isset($_GET['method'])) {
             if (isset($_GET['version'])){
                 $sourceContent = getSourceContent( $_GET['version'] );
                 $dictionary = getDictionary( $sourceContent["content"] );
+                // $dictionary = getDictionaryByVersion( $_GET['version'] );
                 echo json_encode( ["result" => $dictionary!==false, "dictionary" => $dictionary ] );
             } else {
                 echo json_encode( ["result" => false , "error" => "What is local version?" ] );
