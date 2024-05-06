@@ -4,20 +4,16 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { 
-    View, 
-    ImageBackground,
-    Image,
-    Linking,
+    ActivityIndicator,
+    ScrollView, 
     TextInput,
     StyleSheet,
-    Alert
+    Platform,
+    Alert,
+    Image
 } from 'react-native';
 import { 
     Button,
-    Text, 
-    ListItem,
-    Divider,
-    Icon,
 } from '@rneui/themed';
 import { theme } from './theme';
 import { BannerView, BannerNeedUpdate } from './BannerView';
@@ -25,6 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as API from '../data/API';
 import * as Config from '../data/Config';
 import * as SecureStore from 'expo-secure-store';
+import Images  from '../assets/index';
 
 // md5 javascript function php equivalent
 function md5(inputString) {
@@ -79,103 +76,206 @@ const getDeviceId = async () => {
     return deviceId;
 }
 
-export  default function SignInScreen ({navigation, route}) {
-    const setIsSignedIn = ( val ) => route.params.setIsSignedIn( val );
-    const setUser = ( val ) => route.params.setUser( val );
+export default function SignInScreen ({navigation, route}) {
+    const setAuthtoken = ( val ) => route.params.setAuthtoken( val );
+    const {username} =  route.params;
+    const setUsername = ( val ) => route.params.setUsername( val );
+    const setAppIsOffline = ( val ) => route.params.setAppIsOffline( val );
+    
+    const [isLoading, setIsLoading] = useState(true);
 
-    const [username, setUsername] = useState( '' );
-    const [password, setPassword] = useState( '' );
     const [deviceId, setDeviceId] = useState(null)
+    
+    const [usernameInputValue, setUsernameInputValue] = useState( '' )
+    const [password, setPassword] = useState( '' )
+    
+    const [name, setName] = useState( '' )
+    
+    
+    const [registerUI, setRegisterUI] = useState( false )
 
 
-    const SignIn = () => {
-        if (username==''||password==''){
+    const model = Platform.select({
+      ios: (Platform.isPad ? 'iPad' : 'iPhone'),
+      android: Platform.constants.Model,
+      default: 'Unknown',
+    });
+
+    const osVersion = Platform.select({
+      ios: 'iOS ' + Platform.Version,
+      android: 'Android' + Platform.Version,
+      default: ''
+    });
+    
+
+    const LogIn = () => {
+        if (usernameInputValue==''||password==''){
             Alert.alert('Что-то забыли', 'Укажите логин и пароль для входа')
             return
         }
 
-        API.Post( {method: 'signin'}, {username: username.toLowerCase(), password: md5(password), deviceid: deviceId } )
-        .then( res => {
-            if ( res.data.result ){
-                let SignedInTimeout = new Date();
-                SignedInTimeout.setDate(SignedInTimeout.getDate() + parseInt(res.data.signedintimeoutdays))
-                let user = { ...res.data.user, username, signedInTimeout: Date.parse(SignedInTimeout).toString() }
-                setUser( user )
-                AsyncStorage.setItem( "user", JSON.stringify(user));
-                setIsSignedIn( true )
+        API.Post( {method: 'login'}, {
+            username: usernameInputValue.toLowerCase().trim(), 
+            password: md5(password), 
+            deviceid: deviceId,
+            device: `${model}, ${osVersion}` 
+        })
+        .then( ({data}) => {
+            console.log(data)
+            const {result, authtoken} = data
+            if ( result ){
+                AsyncStorage.setItem( "username", usernameInputValue.toLowerCase().trim() )
+                AsyncStorage.setItem( "authtoken", authtoken )
+                setUsername( usernameInputValue.toLowerCase().trim() )
+                setAuthtoken( authtoken )
             } else {
-                console.log('SignIn failed');
-                Alert.alert('Ошибка', 'Не удалось авторизоваться, проверьте логин/пароль и попробуйте снова')
+                console.log('LogIn failed');
+                Alert.alert('Не удалось войти', 'Проверьте логин/пароль и попробуйте снова. Восстановить пароль можно на priemka-pro.ru')
             }
         })
         .catch(err => {
-            console.log('SignIn failed: ' + err);
+            console.log('LogIn failed: ' + err);
         })
     }
 
+    const CreateAccount = () => {
+        if (usernameInputValue==''||name==''){
+            Alert.alert('Что-то забыли', 'Укажите логин и наименование вашей компании для регистрации')
+            return
+        }
+
+        API.Post( {method: 'createaccount'}, {
+            username: usernameInputValue.toLowerCase(), 
+            name,
+            app: 'app', 
+            deviceid: deviceId,
+            device: `${model}, ${osVersion}` 
+        })
+        .then( ({data}) => {
+            console.log(data)
+            const {result, authtoken, error} = data
+            if ( result ){
+                AsyncStorage.setItem( "username", usernameInputValue.toLowerCase().trim() )
+                AsyncStorage.setItem( "authtoken", authtoken )
+                Alert.alert('🎉\nРегистрация успешна', 'Проверьте указанный вами e-mail. На него отправили пароль, ссылку на панель управления и инфо по следующим шагам для начала работы.')
+                setUsername( usernameInputValue.toLowerCase().trim() )
+                setAuthtoken( authtoken )
+            } else {
+                console.log('CreateAccount failed');
+                Alert.alert('Не удалось 🤔', error)
+            }
+        })
+        .catch(err => {
+            console.log('CreateAccount failed: ' + err);
+        })
+    }
 
     // Initial loading
     useEffect(() => {
-
         getDeviceId()
         .then(deviceId =>{ 
             setDeviceId(deviceId)
-            // init(Config.AmplitudeKey, deviceId);
-            // track('HomeScreen-View', {appPlatform, appVersion});
-              
+            init(Config.AmplitudeKey, deviceId);
+            track('SignInScreen-View');
         } )
 
+        // AsyncStorage.clear()
         // AsyncStorage.removeItem('user')
-        AsyncStorage.getItem('user')
-        .then( res => {
-            let user = JSON.parse(res)
-            setUser(user)
-            const now = Date.now()
-            if (user.signedInTimeout > now) {
-                setIsSignedIn( true )
+        // AsyncStorage.removeItem('applicationId')
+        // AsyncStorage.removeItem('authtoken')
+
+        AsyncStorage.getItem('authtoken')
+        .then( authtoken => {
+            if (authtoken){
+                API.Get({ method:'auth', authtoken })
+                .then(({data}) => {
+                    console.log( data ) 
+                    setAppIsOffline(false)
+                    if (data.result){
+                        setAuthtoken(authtoken) 
+                    }
+                })
+                .catch( err => {
+                    setAuthtoken(authtoken) 
+                    console.log( 'auth error. \n' + JSON.stringify(err) ) 
+                })
+                .finally(()=>setIsLoading(false))
             } else {
-                console.log( "SignedInTimeout expired" );
-                setUsername( user.username ) 
+                AsyncStorage.clear()
+                setIsLoading(false)
             }
         })
-
         
+        AsyncStorage.getItem('username')
+        .then( username => {
+            setUsername(username||'')
+            setUsernameInputValue(username||'')
+        })
     }, []);
 
+    if (isLoading){
+        return (
+            <ScrollView contentContainerStyle={{ flexGrow: 1, paddingTop: 250}}>
+                <ActivityIndicator size="large" />
+            </ScrollView>
+        )
+    }
 
     return (
-        <View 
-            style={{
-                paddingTop: 100,
-                paddingLeft: 20,
-                paddingRight: 20,
-            }}
+        <ScrollView 
+            contentContainerStyle={{ flexGrow: 1 }}
+            style={{ padding: 20, paddingTop:100}}
         >
-            <BannerView 
-                key={'new'}
-                header={Config.CompanyName}
-                text= {`Это приложения для специалистов компании ${Config.CompanyName}. Если вы являетесь сотрудником, но не имеете данных для входа, обратитесь к своему руководителю.`}
-                button={ 
+            {/* <Image 
+                source={Images.logo} 
+                style={{marginHorizontal:20, paddingVertical:50, width:'80%', height:50}}
+                resizeMode="contain"
+            /> */}
+            {/* <Text style={{padding: 18, paddingBottom:40, fontSize:14}} >Приложение для бизнеса по&nbsp;экспертной приёмке квартир в&nbsp;новостройках.</Text> */}
+            
+            {
+                registerUI ? (
                     <>
-                        <TextInput
-                            style={ styles.input }
-                            onChangeText={ setUsername }
-                            value={username.toLowerCase()}
-                            placeholder="Логин"
-                        />
-                        <Divider width={10} style={{ opacity: 0 }} />
-
-                        <TextInput
-                            secureTextEntry={true}
-                            style={ styles.input }
-                            onChangeText={ setPassword }
-                            value={password}
-                            placeholder="Пароль"
-                        />
-                        <Divider width={10} style={{ opacity: 0 }} />
-
+                        <BannerView 
+                            key={'new'}
+                            header="Регистрация компании"
+                            button={ 
+                                <>
+                                    <TextInput
+                                        style={ styles.input }
+                                        onChangeText={ setUsernameInputValue }
+                                        value={usernameInputValue?.toLowerCase()}
+                                        placeholder="E-mail"
+                                    />
+            
+                                    <TextInput
+                                        style={ styles.input }
+                                        onChangeText={ setName }
+                                        value={name}
+                                        placeholder="Название компании"
+                                    />
+            
+                                    <Button 
+                                        title="Зарегистрировать"
+                                        // style={{ borderRadius: 15, margin: 10 }}
+                                        buttonStyle={{ 
+                                            borderColor: 'transparent',
+                                            borderWidth: 0,
+                                            borderRadius: 5,
+                                            padding: 15,
+                                            marginLeft: 10,
+                                            marginRight: 10,
+                                            marginTop: 10,
+                                            backgroundColor: theme.lightColors.primary,
+                                        }}
+                                        onPress={CreateAccount} 
+                                    />
+                                </>
+                            }
+                        /> 
                         <Button 
-                            title="Войти"
+                            type="outline"
+                            title="Вход"
                             // style={{ borderRadius: 15, margin: 10 }}
                             buttonStyle={{ 
                                 borderColor: 'transparent',
@@ -184,19 +284,74 @@ export  default function SignInScreen ({navigation, route}) {
                                 padding: 15,
                                 marginLeft: 10,
                                 marginRight: 10,
-                                marginTop: 10,
-                                backgroundColor: theme.lightColors.primary,
                             }}
                             onPress={ ()=>{
-                                SignIn( true )
-                                
+                                setRegisterUI( false )
                             }} 
                         />
                     </>
-                }
-            /> 
-            <Text style={{paddingTop: 300, textAlign: 'center'}}>Разработка tumarkin.me</Text> 
-        </View> 
+
+                ):(
+                    <>
+                        <BannerView 
+                            key={'new'}
+                            header="Вход"
+                            // text= {`Это приложения для специалистов компании ${Config.CompanyName}. Если вы являетесь сотрудником, но не имеете данных для входа, обратитесь к своему руководителю.`}
+                            button={ 
+                                <>
+                                    <TextInput
+                                        value={usernameInputValue?.toLowerCase()}
+                                        onChangeText={ setUsernameInputValue }
+                                        style={ styles.input }
+                                        placeholder="Логин"
+                                    />
+            
+                                    <TextInput
+                                        value={password}
+                                        onChangeText={ setPassword }
+                                        secureTextEntry={true}
+                                        style={ styles.input }
+                                        placeholder="Пароль"
+                                    />
+            
+                                    <Button 
+                                        title="Войти"
+                                        buttonStyle={{ 
+                                            borderColor: 'transparent',
+                                            borderWidth: 0,
+                                            borderRadius: 5,
+                                            padding: 15,
+                                            marginLeft: 10,
+                                            marginRight: 10,
+                                            marginTop: 10,
+                                            backgroundColor: theme.lightColors.primary,
+                                        }}
+                                        onPress={LogIn} 
+                                    />
+                                </>
+                            }
+                        /> 
+                        {/* <Button 
+                            type="outline"
+                            title="Регистрация"
+                            buttonStyle={{ 
+                                borderColor: 'transparent',
+                                borderWidth: 0,
+                                borderRadius: 5,
+                                padding: 15,
+                                marginLeft: 10,
+                                marginRight: 10,
+                            }}
+                            onPress={ ()=>{
+                                setRegisterUI( true )
+                            }} 
+                        /> */}
+                    </>
+                )
+            }
+            {/* <Text style={{paddingTop: 100, textAlign: 'center', color: 'grey'}}>Разработка tumarkin.me</Text>  */}
+
+        </ScrollView> 
     )
 }
 
@@ -208,8 +363,6 @@ const styles = StyleSheet.create({
         borderRadius: 5,
         fontSize: 19,
         padding: 10,
-        marginLeft: 10,
-        marginRight: 10,
-        marginTop: 10,
+        margin: 10
     }
   });

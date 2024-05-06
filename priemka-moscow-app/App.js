@@ -7,6 +7,8 @@ import SignInScreen from './components/SignInScreen';
 import HomeScreen from './components/HomeScreen';
 import ApartmentScreen from './components/ApartmentScreen';
 import RoomScreen from './components/RoomScreen';
+import CheckScreen from './components/CheckScreen';
+import CameraScreen from './components/CameraScreen';
 import FailChecksListScreen from './components/FailChecksListScreen';
 import WebviewScreen from './components/WebviewScreen';
 import { NavigationContainer } from '@react-navigation/native';
@@ -29,27 +31,21 @@ const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
 
+
+
 function App() {
-  const [isSignedIn, setIsSignedIn] = useState( false );
-  const [user, setUser] = useState( {} );
+  const [authtoken, setAuthtoken] = useState( '' )
+  const [username, setUsername] = useState( '' )
+  const [appIsOffline, setAppIsOffline] = useState(true);
+
   
-
-  const designTypes = [
-      {name: 'С чистовой отделкой', pricePerMetr: 10750},
-      {name: 'White-box', pricePerMetr: 8750},
-      {name: 'Без отделки', pricePerMetr: 6750},
-  ]
-  const [designTypeSelected, setDesignTypeSelected] = useState( 0 );
-  const [square, setSquare] = useState( null );
-
-
   function HomeScreenTabs() {
     return (
       <Tab.Navigator>
           <Tab.Screen 
             name="Home" 
             component={HomeScreen} 
-            initialParams={{ setIsSignedIn, setUser, user, designTypes, setSquare, setDesignTypeSelected }}
+            initialParams={{authtoken, setAuthtoken, username, appIsOffline }}
             options={{
               tabBarStyle: { display: 'none' },
               headerShown: false,
@@ -72,16 +68,16 @@ function App() {
     NavigationBar.setBackgroundColorAsync("white");
   }
 
+  
   return (
-    
     <NavigationContainer>
       <Stack.Navigator>
-        {! isSignedIn ? (
+        { !authtoken || authtoken.length == 0 ? (
           <>
             <Stack.Screen
               name="SignIn"
               component={SignInScreen} 
-              initialParams={{ setIsSignedIn, setUser }}
+              initialParams={{ setAuthtoken, username, setUsername, setAppIsOffline }}
               options={{headerShown: false}}
               />
           </>
@@ -90,7 +86,7 @@ function App() {
             <Stack.Screen
               name="HomeTab"
               component={HomeScreenTabs}
-              options={{headerShown: false, }}
+              options={{headerShown: false, title: ''}}
               />
             <Stack.Screen 
               name="Apartment" 
@@ -102,6 +98,24 @@ function App() {
               component={RoomScreen}
               options={({ route }) => ({ 
                 title: route.params.title, 
+              })}
+            />
+            <Stack.Screen 
+              name="Check" 
+              component={CheckScreen}
+              options={({ route }) => ({ 
+                title: 'Проверка', 
+              })}
+            />
+            <Stack.Screen 
+              name="Camera" 
+              component={CameraScreen}
+              options={({ route }) => ({ 
+                title: route.params.title,
+                headerStyle: {
+                  backgroundColor: 'black',
+                },
+                headerTintColor: '#fff', 
               })}
             />
             <Stack.Screen 

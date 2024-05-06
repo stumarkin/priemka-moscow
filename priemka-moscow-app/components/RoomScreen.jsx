@@ -1,6 +1,4 @@
 import { useState, useEffect } from 'react';
-import * as SecureStore from 'expo-secure-store';
-import {BannerIsOverdued} from './BannerView';
 import { 
     ScrollView, 
     StyleSheet, 
@@ -10,6 +8,7 @@ import {
     Platform,
     TouchableWithoutFeedback,
     Keyboard,
+    Image
 } from 'react-native';
 import { 
     Badge,
@@ -26,18 +25,7 @@ import {
 import { theme } from './theme';
 import * as Haptics from 'expo-haptics';
 import * as Config from '../data/Config';
-import { init, track } from '@amplitude/analytics-react-native';
 import { useHeaderHeight } from '@react-navigation/elements'
-
-
-const getDeviceId = async () => {
-    let deviceId = await SecureStore.getItemAsync('deviceId');
-    if (!deviceId) {
-        deviceId = generateId(19);
-        await SecureStore.setItemAsync('deviceId', deviceId);
-    }
-    return deviceId;
-}
 
 
 const rand5digits = () => (Math.floor(Math.random()*100000));
@@ -70,38 +58,46 @@ const inclineWord = ( howMany, ofWhat ) => {
     }
 }
 
-
 const escapeN = (str) => {
     return str.replace( /\n/g, "<br>")
-  }
+}
 
-  
 const escapeBR = (str) => {
-    return str.replace( /<br>/g, "\n")
-  }
-
+    return str?.replace( /<br>/g, "\n")
+}
 
 
 export default function RoomScreen ({navigation, route}) {
+    let {
+        form, 
+        room, 
+        dictionary, 
+        authtoken,
+        featuretoggles,
+        plan,
+        formIsOffline
+    } = route.params;
+    const saveForm = () => route.params.saveForm()
+    const AmplitudeTrack = (event, obj) => route.params.AmplitudeTrack(event, obj)
+
+
     const [deviceId, setDeviceId] = useState(null)
-    const [isLoading, setIsLoading] = useState(true);
-    const dictionary = route.params.dictionary;
-    const isOverdue = route.params.isOverdue;
-    let room = route.params.room;
-    const [comment, setComment] = useState(escapeBR(room.comment));
-    const [checkComment, setCheckComment] = useState('');
-    const form = route.params.form;
-    const sendForm = () => route.params.sendForm();
-    const [forceUpdateCounter, setForceUpdateCounter] = useState(0);
+    const [isLoading, setIsLoading] = useState(true)
+    const [comment, setComment] = useState(escapeBR(room.comment))
+    const [checkComment, setCheckComment] = useState('')
+    // const [isCheckDialogInputFocused, setIsCheckDialogInputFocused] = useState(false);
+
+    const [formImagesCount, setFormImagesCount] = useState(0);
 
     
+    const [forceUpdateCounter, setForceUpdateCounter] = useState(0);
     const forceUpdate = () => {
-        setForceUpdateCounter(forceUpdateCounter+1);
+        setForceUpdateCounter(forceUpdateCounter+1)
     }
 
     const onEndEditingComment = () => {
         room.comment = comment.trim().replace(/\n/g, "\\n");
-        sendForm()
+        saveForm()
     }
 
     // Dialog
@@ -114,7 +110,7 @@ export default function RoomScreen ({navigation, route}) {
         const section = JSON.parse(JSON.stringify( form.nested_templates.find( ({id}) => id == checkedSectionId) ));
         section.templateId = section.id;
         section.id = '' + section.templateId + rand5digits();
-
+        //add checks
         section.nested.push( ...form.nested_templates.filter( ({parent}) => parent == checkedSectionId) );
         room.nested.push( JSON.parse(JSON.stringify(section)) );
         return room;
@@ -129,7 +125,7 @@ export default function RoomScreen ({navigation, route}) {
     };
     const onEndRoomEdit = () => {
         room.name = editRoomName;
-        sendForm(); 
+        saveForm(); 
         forceUpdate();
       }
     
@@ -143,12 +139,12 @@ export default function RoomScreen ({navigation, route}) {
     };
     const onEndSectionEdit = () => {
         editSection.name = editSectionName;
-        sendForm(); 
+        saveForm(); 
         forceUpdate();
     }
     const deleteSection = (section) => {
         room.nested = room.nested.filter( ({id}) => (id!=section.id) );
-        sendForm(); 
+        saveForm(); 
         forceUpdate();
     }
     
@@ -160,7 +156,7 @@ export default function RoomScreen ({navigation, route}) {
     };
     const deleteRoom = (room) => {
         form.apartment = form.apartment.filter( ({id}) => (id!=room.id) );
-        sendForm(); 
+        saveForm(); 
         forceUpdate();
     }
     
@@ -171,23 +167,14 @@ export default function RoomScreen ({navigation, route}) {
     const toggleCheckDetailsDialogIsVisible = () => {
         setCheckDetailsDialogIsVisible(!checkDetailsDialogIsVisible);
     }
-    
-    // Initial
-    useEffect(() => {
-        getDeviceId()
-        .then(deviceId =>{ 
-            setDeviceId(deviceId)
-            init(Config.AmplitudeKey, deviceId);
-        } )
-    }, []); 
 
     // Configure navbar title and button
     useEffect(() => {
-        // track('RoomScreen-View'); 
+        AmplitudeTrack('App-RoomScreen-View'); 
         navigation.setOptions({
-            title: room.name,
+            // title: room.name,
             headerRight: () => (
-                !isOverdue ? (<Icon 
+                <Icon 
                     name="more-horizontal" 
                     type="feather" 
                     color={theme.lightColors.primary}
@@ -195,15 +182,31 @@ export default function RoomScreen ({navigation, route}) {
                         setEditRoomName( room.name );
                         toggleRoomEditDialogIsVisible()
                     }}
-                /> ) : null
+                />
             ),
         });
       }, [navigation, room.name]
     )
+
+    useEffect(() => {
+        setFormImagesCount( 
+			form.apartment
+				.map(room => {
+					return room.nested
+						.map(section => (section.nested.reduce((sum, check) => (sum += check.image ? 1 : 0), 0)))
+						.reduce((sum, sectionChecksCount) => {
+							return sum += sectionChecksCount
+						}, 0)
+				})
+				.reduce((sum, roomChecksCountInAllSections) => {
+					return sum += roomChecksCountInAllSections
+				}, 0)
+		)
+    }, [forceUpdateCounter]); 
     
     useEffect(() => { // hack to save changes of comment field in all the cases going to prev screen after edit the field
         navigation.addListener('beforeRemove', () => {
-          sendForm()
+          saveForm()
         });
       }, [navigation]
     );
@@ -220,30 +223,39 @@ export default function RoomScreen ({navigation, route}) {
                 <ListItem 
                     key={check.id}
                     onPress={ () => {
-                        setCheckDetails(check)
-                        setCheckComment(check.comment ? escapeBR(check.comment) : '')
-                        toggleCheckDetailsDialogIsVisible()
+                        // setCheckDetails(check)
+                        // toggleCheckDetailsDialogIsVisible()
+                        navigation.navigate('Check', { 
+                            AmplitudeTrack,
+                            saveForm,
+                            forceUpdate,
+                            check,
+                            form,
+                            dictionary,
+                            authtoken,
+                            featuretoggles,
+                            plan,
+                            formIsOffline,
+                        })
                     }}
                     containerStyle={ check.value===false ? {backgroundColor: "#FFE4E1"} : {} }
                 >
                     <ListItem.Content>
                         <ListItem.Title>&bull; {dictionary[check.id].name}</ListItem.Title>
-                        <ListItem.Subtitle>{check.value}</ListItem.Subtitle>
+                        <ListItem.Subtitle style={(check.comment || check.image) && {margin:15} }>{escapeBR(check.comment)} {check.image && '🖼'}</ListItem.Subtitle>
                     </ListItem.Content>
                     
                     {
-                        !isOverdue ? (
-                            <Switch
-                                value={!check.value}
-                                onValueChange={() => {
-                                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-                                    check.value = !check.value;
-                                    sendForm();
-                                    forceUpdate();
-                                }}
-                                color="#900603"
-                            />
-                        ) : null
+                        <Switch
+                            value={!check.value}
+                            onValueChange={() => {
+                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+                                check.value = !check.value;
+                                saveForm();
+                                forceUpdate();
+                            }}
+                            color="#900603"
+                        />
                     }
                     
                 </ListItem>
@@ -263,19 +275,17 @@ export default function RoomScreen ({navigation, route}) {
                                 <ListItem.Subtitle>{inclineWord(section.nested.length, "проверка")} </ListItem.Subtitle>
                             </ListItem.Content>
                             {
-                                !isOverdue ? (
-                                    <Icon 
-                                        name="more-horizontal" 
-                                        type="feather" 
-                                        color={theme.lightColors.grey4}
-                                        onPress={()=>{
-                                            setEditSection( section );
-                                            setEditSectionName( section.name ? section.name : dictionary[section.templateId].name );
-                                            toggleSectionEditDialogIsVisible()
-                                        }}
-                                    />
-                                ) : null 
-                                }
+                                <Icon 
+                                    name="more-horizontal" 
+                                    type="feather" 
+                                    color={theme.lightColors.grey4}
+                                    onPress={()=>{
+                                        setEditSection( section );
+                                        setEditSectionName( section.name ? section.name : dictionary[section.templateId].name );
+                                        toggleSectionEditDialogIsVisible()
+                                    }}
+                                />
+                            }
                         </>
                     }
                     isExpanded={expanded[section.id]}
@@ -333,7 +343,7 @@ export default function RoomScreen ({navigation, route}) {
                                         <Button
                                             type="clear"
                                             onPress={() => {
-                                                // track('RoomScreen-AddChecks-Press');
+                                                AmplitudeTrack('App-RoomScreen-AddChecks-Press');
                                                 toggleRoomsDialogIsVisible()
                                             }}
                                         >
@@ -393,9 +403,9 @@ export default function RoomScreen ({navigation, route}) {
                                             <Dialog.Button
                                                 title="Добавить"
                                                 onPress={() => {
-                                                    // track('RoomScreen-AddChecks-DialogChecksChoise-Press', { checkedSectionId });
+                                                    AmplitudeTrack('App-RoomScreen-AddChecks-DialogChecksChoise-Press', { checkedSectionId });
                                                     room = addSection(checkedSectionId, form, room);
-                                                    sendForm();
+                                                    saveForm();
                                                     toggleRoomsDialogIsVisible();
                                                 }}
                                             />
@@ -506,6 +516,8 @@ export default function RoomScreen ({navigation, route}) {
                                     <Dialog key='checkDetail'
                                         isVisible={checkDetailsDialogIsVisible}
                                         onBackdropPress={toggleCheckDetailsDialogIsVisible}
+                                        // overlayStyle={ isCheckDialogInputFocused ? {marginTop:-150} : {marginTop:0} }
+                                        overlayStyle={{marginTop:(checkDetails.image ? 0 : -120)}}
                                     >
                                         <Dialog.Title title={dictionary[checkDetails.id]?.name} />
                                         <Text>{dictionary[checkDetails.id]?.report}</Text>
@@ -519,7 +531,7 @@ export default function RoomScreen ({navigation, route}) {
                                                     value={!checkDetails.value}
                                                     onValueChange={() => {
                                                         checkDetails.value = !checkDetails.value;
-                                                        sendForm();
+                                                        saveForm();
                                                         forceUpdate();
                                                     }}
                                                     color="#900603"
@@ -530,19 +542,21 @@ export default function RoomScreen ({navigation, route}) {
                                                 key="checkComment"
                                                 multiline={true}
                                                 numberOfLines={2}
-                                                placeholder="Примечание"
+                                                placeholder="Добавить примечание"
                                                 maxLength={100}
+                                                // onFocus={() => setIsCheckDialogInputFocused(true) }
+                                                // onBlur={() => setIsCheckDialogInputFocused(false) }
                                                 onChangeText={(text) => setCheckComment( text) }
                                                 onEndEditing={() => {
-                                                    checkDetails.comment = escapeN( checkComment.trim() );
-                                                    checkDetails.value = false;
-                                                    sendForm();
-                                                    forceUpdate();
+                                                    checkDetails.comment = escapeN( checkComment.trim() )
+                                                    checkDetails.value = false
+                                                    saveForm()
+                                                    forceUpdate()
                                                 }}
                                                 value={ checkComment }
                                                 style={{ 
                                                     padding: 15, 
-                                                    height: 70, 
+                                                    height: 140, 
                                                     backgroundColor: 'white', 
                                                     borderWidth: 1, 
                                                     borderColor: theme.lightColors.grey4, 
@@ -550,6 +564,59 @@ export default function RoomScreen ({navigation, route}) {
                                                     textAlignVertical: 'top'
                                                 }}
                                             />
+
+                                            { checkDetails.image && <>
+                                                                        <Image style={{ backgroundColor: 'lightgrey', marginTop: 20, width: '100%', height: 250 }} src={Config.Domain + checkDetails.image} /> 
+                                                                        <Button
+                                                                            key='removePhoto'
+                                                                            type="clear"
+                                                                            onPress={() => {
+                                                                                AmplitudeTrack('App-RoomScreen-RemovePhoto-Press');
+                                                                                delete checkDetails.image 
+                                                                                saveForm()
+                                                                                forceUpdate()
+                                                                            }}
+                                                                            titleStyle={{ color: 'red' }}
+                                                                        >
+                                                                            Удалить фото
+                                                                        </Button>
+                                                                    </>
+                                            }
+                                            
+                                            {
+                                                featuretoggles?.photo && !!+plan?.feature_photo &&
+                                                <>
+                                                    <Button
+                                                        key='addPhoto'
+                                                        onPress={() => {
+                                                            AmplitudeTrack('App-RoomScreen-AddPhoto-Press');
+                                                            toggleCheckDetailsDialogIsVisible()
+                                                            navigation.navigate('Camera', { 
+                                                                AmplitudeTrack,
+                                                                title: '',
+                                                                authtoken,
+                                                                formId: form.id,
+                                                                onGoBack: ( uri ) => { 
+                                                                    checkDetails.value = false;
+                                                                    checkDetails.image = uri
+                                                                    saveForm()
+                                                                    forceUpdate()
+                                                                },   
+                                                            })
+                                                        }}
+                                                        buttonStyle={{ marginBottom: 10, backgroundColor: '#EEE' }}
+                                                        titleStyle={{ color: '#000' }}
+                                                        style={{ 
+                                                            marginTop: 20, 
+                                                        }}
+                                                        disabled={ formImagesCount >= plan?.limit_photo_per_form || formIsOffline }
+                                                    >
+                                                        { checkDetails.image ? 'Заменить фото' : 'Добавить фото' }
+                                                    </Button> 
+                                                    { formImagesCount >= plan?.limit_photo_per_form && <Text style={{alignSelf:'center'}}>Уже добавлено {formImagesCount} фото. Смените тариф, чтобы загружать больше фото в каждую приёмку</Text>}
+                                                    { formIsOffline && <Text style={{alignSelf:'center'}}>В оффлайн режиме добавление фото недоступно</Text>}
+                                                </>
+                                            }
                                         </View>
                                     </Dialog>
                                 </View>
