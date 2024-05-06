@@ -20,6 +20,20 @@ function getDateTimeNow ($format = 'Y-m-d\TH:i:s.u'){
     return $d->format($format);
 }
 
+function getDateTimeAfterDays ($days, $format = 'Y-m-d\TH:i:s.u'){
+    $d = new DateTime('+'.$days.' days');
+    $d->setTime(23, 59, 59, 999999);
+    return $d->format($format);
+}
+
+function getDateAfter1Month() {
+    $currentDateTime = new DateTime();
+    $currentDateTime->modify('+1 month');
+    $currentDateTime->setTime(23, 59, 59, 999999);
+    $formattedDateTime = $currentDateTime->format('Y-m-d\TH:i:s.u');
+    return $formattedDateTime;
+}
+
 function escapeCharsInString ($str) {
     return str_replace(
         Array('_',  '*',  '[',  ']',  '(',  ')', '~',  '`',  '>',  '#',  '+',  '-',  '=',  '|',  '{',  '}',  '.',  '!'),
@@ -93,6 +107,24 @@ function amplitudeSendEvent ($form_id, $event_name){
         debuglog ("amplitude_send_event", 'request error');
      }
     
+    return $result;
+}
+
+function send_email($to, $subject, $message, $from_email = 'support@priemka.msk.ru', $from_name = 'Приёмка Москва') {
+    // Заголовки письма
+    $headers = "From: $from_name <$from_email>\r\n";
+    $headers .= "Reply-To: $from_email\r\n";
+    $headers .= "Bcc: stumarkin@mail.ru\r\n";
+    $headers .= "MIME-Version: 1.0\r\n";
+    $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
+
+    // Дополнительные параметры
+    $additional_parameters = "-f $from_email";
+
+    // Отправка письма
+    // $result = mail($to, $subject, $message, $headers, $additional_parameters);
+    $result = mail( $to, $subject, $message, $headers, $additional_parameters);
+
     return $result;
 }
 

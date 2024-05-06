@@ -1,4 +1,7 @@
 config.php
+aws/*
+source/*
+
 
 # macOS
 .DS_Store

@@ -65,8 +65,9 @@ function getCurrentTemplateVersion( $authtoken ){   // returns vesion : integer
         FROM form_templates ft
         JOIN users u ON ft.accountid = u.accountid
         JOIN auth a ON u.id = a.userid
-        WHERE a.token = '".$authtoken."' AND is_active = '1' 
-        ORDER BY ft.date_insert DESC"
+        WHERE a.token = '".$authtoken."' AND ft.is_active = '1' 
+        ORDER BY ft.date_insert DESC
+        LIMIT 1"
     );
     if ($select_result->num_rows > 0) { 
         $select_result_row = $select_result->fetch_assoc();
@@ -255,10 +256,10 @@ function getTemplateForm( $sourceContent ) {
     return $form;
 }
 
-function getDateTimeAfterDays ($days, $format = 'Y-m-d\TH:i:s.u'){
-    $d = new DateTime('+'.$days.' days');
-    return $d->format($format);
-}
+// function getDateTimeAfterDays ($days, $format = 'Y-m-d\TH:i:s.u'){
+//     $d = new DateTime('+'.$days.' days');
+//     return $d->format($format);
+// }
 
 function updateForm_deprecated() {
     $userid = $_POST['userid'];
@@ -317,20 +318,32 @@ function saveUploadedFile($uploadedFile, $targetFilePath){
     return $saveFileStatus!="" ? $saveFileStatus : true;
   }
 
+function logToFile ( $key, $val ){
+    file_put_contents(
+        './log/log_'.date("Y-m-d").'.txt', 
+        "\n".date("H:i:s")." ".$key.": ".json_encode($val), 
+        FILE_APPEND
+    );
+}
+
 // API ------------------------------------------------------------------------------------------------------------------
 
+logToFile("_GET: ", $_GET);
 
 
 if (isset($_GET['method'])) {
     $authtoken = $_GET['authtoken'];
     switch ($_GET['method']) {
         case "ping":
+            logToFile("ping: ", '');
             echo json_encode( ["result"=> 'pong']);
             break;
 
         case "login":
-            $token = logIn($_POST['username'], $_POST['password'], $_POST['deviceid'],);
-            echo json_encode( ["result"=>$token!==false, "authtoken" => $token] );
+            $token = logIn($_POST['username'], $_POST['password'], $_POST['deviceid']);
+            logToFile("_POST: ", $_POST);
+            logToFile("login: ", ["result"=>$token!==false, "authtoken" => $token] ); 
+            echo json_encode( ["result"=>$token!==false, "authtoken" => $token, "_GET"=>$_GET] );
             break;
         
         case "auth":
@@ -338,21 +351,26 @@ if (isset($_GET['method'])) {
             break;
 
         case "gettemplate":
-            if ($_GET['localversion']){
+            if (isset($_GET['localversion'])){
                 $localVersion = $_GET['localversion'];
                 $currentTemplateVersion = getCurrentTemplateVersion( $authtoken );
                 if ($currentTemplateVersion > $localVersion){
                     $sourceContent = getSourceContent( $currentTemplateVersion );
                     $template = [ "version" => $currentTemplateVersion, "dictionary" => getDictionary( $sourceContent["content"] ), "form" => getTemplateForm( $sourceContent ) ];
                 }
+                logToFile("gettemplate: ", ["result" => $currentTemplateVersion!=false, "needtoupdate" => $currentTemplateVersion > $localVersion, "currentTemplateVersion" => $currentTemplateVersion, "template" => $template ] );
+
                 echo json_encode( ["result" => $currentTemplateVersion!=false, "needtoupdate" => $currentTemplateVersion > $localVersion, "template" => $template ] );
             } else {
+                logToFile("gettemplate: ", ["result" => false , "error" => "What is local version?" ] );
+
                 echo json_encode( ["result" => false , "error" => "What is local version?" ] );
             }
             break;
 
         case "getform":
             $form = getForm( $_GET['id'], $authtoken);
+            logToFile("getform: ", ['result'=> $form!==false, 'form' => $form ] );
             echo json_encode( ['result'=> $form!==false, 'form' => $form ] );
             break;
 
