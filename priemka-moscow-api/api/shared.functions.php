@@ -1,6 +1,6 @@
 <?
 /**
- * @author Sergey Tumarkin https://tumarkin.me
+ * @author Sergey Tumarkin https://tumarkin.me/
  */
 
 function sqlQuery($sql) {
