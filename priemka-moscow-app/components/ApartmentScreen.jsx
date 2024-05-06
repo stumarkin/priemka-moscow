@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
-import {BannerIsOverdued, BannerView} from './BannerView';
+import {BannerView} from './BannerView';
 import { 
   Alert, 
   ScrollView, 
@@ -23,17 +23,13 @@ import {
   Button, 
   Dialog,
   CheckBox,
-  Card,
+  Input,
   Divider,
   Skeleton
 } from '@rneui/themed';
 import { theme } from './theme';
 import * as API from '../data/API';
 import * as Config from '../data/Config';
-
-
-import { init, track } from '@amplitude/analytics-react-native';
-
 
 
 const rand5digits = () => (Math.floor(Math.random()*100000));
@@ -74,82 +70,88 @@ const inclineWord = ( howMany, ofWhat, humanicStyle = false ) => {
   }
 }
 
-const getDeviceId = async () => {
-  let deviceId = await SecureStore.getItemAsync('deviceId');
-  if (!deviceId) {
-      deviceId = generateId(19);
-      await SecureStore.setItemAsync('deviceId', deviceId);
-  }
-  return deviceId;
-}
-
 const escapeBR = (str='') => {
   return str.replace( /<br>/g, "\n")
 }
 
 export default function ApartmentScreen ({navigation, route}) {
     const { 
-      user,
-      address, 
-      apartmentNum, 
-      customer,
-      formId, 
-      ProDaysLeft,
-      designTypeSelected, 
-      designTypes
+		appIsOffline,
+		formIsOffline, 
+		template,
+		authtoken,
+		featuretoggles,
+		plan,
+		address, 
+		apartmentNum, 
+		customer,
+		formId,
+		designTypeSelected, 
     } = route.params
-    const [deviceId, setDeviceId] = useState(null)
+    const getForms = () => route.params.getForms();
+    const AmplitudeTrack = (event, obj) => route.params.AmplitudeTrack(event, obj);
+
+    const dictionary = template.dictionary;
+
     const [isLoading, setIsLoading] = useState(false);
     const [isInitialLoading, setIsInitialLoading] = useState(true);
     const [form, setForm] = useState({});
-    const [isOverdue, setIsOverdue] = useState(false);
-    const overdueAfterSeconds = 60 * 60 *24;
-    const [dictionary, setDictionary] = useState({});
+    const [formImagesCount, setFormImagesCount] = useState(0);
+    const [lastFormUpdate, setLastFormUpdate] = useState( null );
+    const [isFormTemplateVersionActual, setIsFormTemplateVersionActual] = useState( true );
 
-    const getPreviousForms = () => route.params.getPreviousForms();
+	const [addressInput, setAddressInput] = useState( address );
+    const [apartmentNumInput, setApartmentNumInput] = useState( apartmentNum );
+    const [customerInput, setCustomerInput] = useState( customer );
     
-    // Dialog Add Room
-    // const [checkedRoomId, setCheckedRoomId] = useState();
-    const [checkedRoomIdArray, setCheckedRoomIdArray] = useState(['room']);
-    const [roomsDialogIsVisible, setRoomsDialogIsVisible] = useState(false);
-    const toggleRoomsDialogIsVisible = () => {
-      setRoomsDialogIsVisible(!roomsDialogIsVisible);
-    };
-    
-    const addSection = (sectionId, form, room) => {
-      const section = JSON.parse(JSON.stringify( form.nested_templates.find( ({id}) => id == sectionId) ));
-      section.templateId = section.id;
-      section.id = '' + section.templateId + rand5digits();
+	const addSection = (sectionId, form, room) => {
+		try {
+			const section = JSON.parse(JSON.stringify(form.nested_templates.find(({ id }) => id == sectionId)));
+			section.templateId = section.id;
+			section.id = '' + section.templateId + rand5digits();
+			//deprecated
+			//adding checks
+			if (section.nested.length == 0){
+				section.nested.push(...form.nested_templates.filter(({ parent }) => parent == sectionId));
+			}
+			room.nested?.push(JSON.parse(JSON.stringify(section)));
+		} catch ({ name, message }) {
+			Alert.alert(`Ошибка добавления набора проверок ${sectionId}`, `${name}\n${message}`)
+			console.log(err);
+		} finally {
+			return room;
+		}
+	}
 
-      section.nested.push( ...form.nested_templates.filter( ({parent}) => parent == sectionId) );
-      room.nested.push( JSON.parse(JSON.stringify(section)) );
-      return room;
-    }
-
-    const addRoom = ( roomId, form, dictionary = dictionary ) => {
-      let room =  JSON.parse(JSON.stringify( form.nested_templates.find( ({id}) => id==roomId) ));
-      room.name = dictionary[roomId]?.name;
-      room.templateId = room.id;
-      room.id = '' + room.templateId + rand5digits();
-      let defaultNested = null;
-      switch (form.designTypeSelected) {
-        case 0:
-          defaultNested = room.defaultNested0;
-          break;
-          case 1:
-          defaultNested = room.defaultNested1;
-          break;
-          case 2:
-          defaultNested = room.defaultNested2;
-          break;
-      }
-      defaultNested?.forEach( sectionId => {
-        room = addSection(sectionId, form, room);
-      })
-      
-      form.apartment.push( room );
-      return form;
-    }
+	const addRoom = (roomId, form, dictionary) => {
+		try {
+			let room = JSON.parse(JSON.stringify(form.nested_templates.find(({ id }) => id == roomId)));
+			room.name = dictionary[roomId]?.name;
+			room.templateId = room.id;
+			room.id = '' + room.templateId + rand5digits();
+			let defaultNested = null;
+			switch (form.designTypeSelected) {
+				case 0:
+					defaultNested = room.defaultNested0;
+					break;
+				case 1:
+					defaultNested = room.defaultNested1;
+					break;
+				case 2:
+					defaultNested = room.defaultNested2;
+					break;
+			}
+			defaultNested?.forEach(sectionId => {
+				room = addSection(sectionId, form, room);
+			})
+			form.apartment.push(room);
+		} catch ({ name, message }) {
+			Alert.alert(`Ошибка добавления комнаты ${roomId}`, `${name}\n${message}`)
+			console.log(err);
+		} finally {
+			return form;
+		}
+	}
 
     const getName = ( obj, showClause = false ) => {
       return obj.name || ( dictionary[ (obj.templateId ? obj.templateId : obj.id) ].report 
@@ -158,116 +160,109 @@ export default function ApartmentScreen ({navigation, route}) {
                           ) ;
     }
     
+	const createOnlineForm = ( form, doConvertOfflineToOnline = false ) => {
+		let data = new FormData();
+		data.append('form',  JSON.stringify(form));
+		data.append('summary', JSON.stringify({
+			timestamp: Date.now(),
+			address,
+			apartmentNum,
+			customer,
+			checksCountTotal: 0,
+			failChecksCountTotal: 0,
+			imagesCountTotal: 0
+		}) );
+		
+		API.Post({method: 'createform', authtoken}, data )
+		.then( res => {
+			const {id, token} = res.data
+			if( id && token ){
+				setForm( {...form, id, token} )
+				updateOnlineForm( {...form, id, token}, doConvertOfflineToOnline )
+			}
+		})
+		.catch( err => console.log('API: createform failed: ' + err) )
+	}
 
-    // Initial loading
-    useEffect(() => {
-      getDeviceId()
-      .then( deviceId => { 
-          setDeviceId(deviceId)
-          init(Config.AmplitudeKey, deviceId);
-          // track('ApartmentScreen-View'); 
-      } )
+	const updateOnlineForm = ( form, doConvertOfflineToOnline = false ) => {
+		const summary = {
+			timestamp: Date.now(),
+			address: form.address,
+			apartmentNum: form.apartmentNum,
+			customer: form.customer,
+			checksCountTotal: form.apartment
+								.map(room => {
+									return room.nested
+										.map(section => (section.nested.reduce((sum, check) => (sum += 1), 0)))
+										.reduce((sum, sectionChecksCount) => {
+											return sum += sectionChecksCount
+										}, 0)
+								})
+								.reduce((sum, roomChecksCountInAllSections) => {
+									return sum += roomChecksCountInAllSections
+								}, 0),
+			failChecksCountTotal: form.apartment
+								.map(room => {
+									return room.nested
+										.map(section => (section.nested.reduce((sum, check) => (sum += check.value === false ? 1 : 0), 0)))
+										.reduce((sum, sectionChecksCount) => {
+											return sum += sectionChecksCount
+										}, 0)
+								})
+								.reduce((sum, roomChecksCountInAllSections) => {
+									return sum += roomChecksCountInAllSections
+								}, 0),
+			imagesCountTotal: form.apartment
+								.map(room => {
+									return room.nested
+										.map(section => (section.nested.reduce((sum, check) => (sum += check.image ? 1 : 0), 0)))
+										.reduce((sum, sectionChecksCount) => {
+											return sum += sectionChecksCount
+										}, 0)
+								})
+								.reduce((sum, roomChecksCountInAllSections) => {
+									return sum += roomChecksCountInAllSections
+								}, 0)
+		}
+		let data = new FormData();
+		data.append('id', form.id );
+		data.append('form',  JSON.stringify(form));
+		data.append('summary', JSON.stringify(summary) );
+		API.Post({method: 'updateform', authtoken}, data )
+		.then( ({data}) => {
+			if (data.result){
+				if (doConvertOfflineToOnline){
+					deleteOfflineForm('form_' + form.offlineId)
+				}
+				setLastFormUpdate( Date.now() )
+				setIsInitialLoading(false)
+			}
+		} )
+		.catch( err => console.log('API: updateform failed: ' + err) )
 
-      API.Get('getdictionary')
-      .then( async (res) => {
-        const dictionary = res.data ;
-        setDictionary( dictionary );
-        API.Get( (formId ? { method:'getform', id: formId} : 'getform') )
-        .then(res => { 
-            let form = res.data;
-
-            if (!formId) {
-              form.address = address;
-              form.apartmentNum = apartmentNum;
-              form.customer = customer;
-              form.designTypeSelected = designTypeSelected;
-              form.timestampCreate = Date.now();
-              // default rooms
-              ['room', 'kitchen', 'bathroom', 'general'].forEach( room => {
-                form = addRoom(room, form, dictionary );
-              })
-            }
-            setAddressInput( form.address );
-            setApartmentNumInput( form.apartmentNum );
-            setCustomerInput( form.customer );
-            setForm( form );
-            setIsOverdue( ProDaysLeft ? false : Math.floor((Date.now() - form.timestampCreate)/1000) > overdueAfterSeconds )
-            setIsInitialLoading(false)
-        })
-      })
-    }, []);
-
-     // Configure navbar title and button
-     useEffect(() => {
-        // track('RoomScreen-View'); 
-        navigation.setOptions({
-            title: form.address,
-            headerRight: () => (
-                !isOverdue ? (<Icon 
-                    name="more-horizontal" 
-                    type="feather" 
-                    color={theme.lightColors.primary}
-                    onPress={()=>{
-                        toggleApartmentAddressDialogIsVisible()
-                    }}
-                /> ) : null
-            ),
-        });
-      }, [navigation, form.address]
-    )
-
-
-  
-    // Sending form to server
-    const sendForm = ( ) => {
-        form.deviceid = deviceId;
-        setForm(form);
-        let data = new FormData();
-        const summary = {
-            timestamp: Date.now(),
-            address: form.address,
-            apartmentNum: form.apartmentNum,
-            customer: form.customer,
-            checksCountTotal: form.apartment
-                .map(room => {
-                    return room.nested
-                        .map(section => (section.nested.reduce((sum, check) => (sum += 1), 0)))
-                        .reduce((sum, sectionChecksCount) => {
-                            return sum += sectionChecksCount
-                        }, 0)
-                })
-                .reduce((sum, roomChecksCountInAllSections) => {
-                    return sum += roomChecksCountInAllSections
-                }, 0),
-            failChecksCountTotal: form.apartment
-                .map(room => {
-                    return room.nested
-                        .map(section => (section.nested.reduce((sum, check) => (sum += check.value === false ? 1 : 0), 0)))
-                        .reduce((sum, sectionChecksCount) => {
-                            return sum += sectionChecksCount
-                        }, 0)
-                })
-                .reduce((sum, roomChecksCountInAllSections) => {
-                    return sum += roomChecksCountInAllSections
-                }, 0),
-        }
-        data.append('userid', user.id );
-        data.append('form',  JSON.stringify(form));
-        data.append('summary', JSON.stringify(summary) );
-        setIsLoading(true);
-
-        API.Post( {method: 'setform', token: form.token}, data )
-        .then( response => {
-            // AsyncStorage.setItem(`form_${form.id}`, JSON.stringify(summary));
-            getPreviousForms();
-        })
-        .catch(err => {
-            console.log('SendForm failed: ' + err);
-        })
-        .finally(()=>{
-            setIsLoading(false);
-        });
+	}
+ 
+    const saveForm = ( doConvertOfflineToOnline = false ) => {
+		setForm(form)
+       
+		if (formIsOffline && !doConvertOfflineToOnline) {
+			AsyncStorage.setItem( `form_${form.offlineId}`, JSON.stringify( form ))
+			setLastFormUpdate( Date.now() )
+		} else {
+			updateOnlineForm( {...form, id: (formId || form.id)} ) // formId -> id = workaround for editing demo forms (demoXX!=demo)
+		}
     }
+
+	const convertOfflineFormToOnlineForm = ( form ) => {
+		if (form.isOffline){
+			delete form.isOffline
+			form.wasOffline = true
+			const doConvertOfflineToOnline = true
+			createOnlineForm( form, doConvertOfflineToOnline)
+		} else {
+			Alert.alert('Это не оффлайн форма', 'Изменения не выполнены')
+		}
+	}
 
     const getFailChecks = ( form, showClause = false) => {
       let i = 1
@@ -277,64 +272,128 @@ export default function ApartmentScreen ({navigation, route}) {
             ...room, 
             sections: room.nested.reduce( (sections, section ) => {
                         const checks = section.nested.reduce( (checks, check) => {
-                          return checks += (!check.value ? `${i++}. ${getName(check, showClause)}\n\n` : '')
+                          return checks += (!check.value ? `${i++}. ${getName(check, showClause)}\n` : '')
                         }, '' )
-                        return sections += (checks!='' ? `${getName(section).toUpperCase()}:\n\n${checks}` : '')
+                        return sections += (checks!='' ? `\n${getName(section).toUpperCase()}:\n\n${checks}` : '')
                       }, '') +  (room.comment.length>0 ? `Другое:\n${i++} ${escapeBR(room.comment)}\n` : '' )
           }
         ))
-        .reduce( (sum, room) => ( sum += (room.sections!='' ? `\n___________________________________\n\n${room.name.toUpperCase()}\n___________________________________\n\n${room.sections}\n` : '') ), '' ) 
+        .reduce( (sum, room) => ( sum += (room.sections!='' ? `\n\n🔸 ${room.name.toUpperCase()} \n${room.sections}\n` : '') ), '' ) 
     
       return `#${form.id}\n\nВ результате осмотра квартиры по адресу ${form.address}, ${form.apartmentNum} ` +
               `выявлены следующие недостатки:\n`+
               `${failChecks}`;
     }
 
+	const deleteOfflineForm = ( key ) => {
+		AsyncStorage.removeItem( key )
+		.then(()=>{
+			// getForms()
+			Alert.alert('Офлайн приёмка удалена', key)
+			navigation.goBack()
+		})
+	}
+
+    const deleteOnlineForm = ( id ) => {
+		API.Get( { method: 'deleteform', id, authtoken })
+		.then( ({data})=> {
+			console.log(data);
+			if (data.result){
+				getForms()
+				Alert.alert('Приёмка удалена', id)
+				navigation.goBack()
+			} else {
+				console.log('Server deleteApartment failed:')
+				console.log(data)
+			}
+		})
+		.catch(err => {
+			console.log('Server deleteApartment failed: ' + err)
+		});
+	}
+
+    // Initial
+	useEffect(() => {
+
+			const renderForm = ( form ) => {
+				const {address, apartmentNum, customer, formTemplateVersion} = form
+				setAddressInput(address)
+				setApartmentNumInput(apartmentNum)
+				setCustomerInput(customer)
+				setForm(form)
+				setIsInitialLoading(false)
+				setIsFormTemplateVersionActual( formTemplateVersion == template.version )
+			}
+			
+			if ( formId ) {
+				if (formIsOffline) {
+					AsyncStorage.getItem( formId )
+					.then( form_json => renderForm( JSON.parse(form_json) ))
+				} else {
+					API.Get({ method: 'getform', id: formId, authtoken })
+					.then( ({data}) => renderForm( JSON.parse(data.form) ) )
+				}
+			} else {
+				let form = JSON.parse(JSON.stringify( {...template.form, authtoken, address, apartmentNum, customer, designTypeSelected, timestampCreate: Date.now()} ));
+				// default rooms
+				// ['room', 'kitchen', 'bathroom', 'general']
+				// .forEach( room => {
+				// 	form = addRoom(room, form, dictionary);
+				// })
+
+				if (formIsOffline) {
+					form.offlineId = Date.now()
+					form.isOffline = true
+					setForm( form )
+					setIsInitialLoading(false)
+				} else {
+					createOnlineForm( form )
+				}
+			}
+
+			AmplitudeTrack('App-ApartmentScreen-View'); 
+
+
+	}, []);
+
+     // Configure navbar title and button
+     useEffect(() => {
+        AmplitudeTrack('App-RoomScreen-View'); 
+        navigation.setOptions({
+            // title: form.address,
+            headerRight: () => (
+                <Icon 
+                    name="more-horizontal" 
+                    type="feather" 
+                    color={theme.lightColors.primary}
+                    onPress={()=>{
+                        toggleApartmentAddressDialogIsVisible()
+                    }}
+                />
+            ),
+        });
+      }, [navigation, form.address]
+    )
+
+
+    // Dialog Add Room
+    const [checkedRoomIdArray, setCheckedRoomIdArray] = useState([]);
+    const [roomsDialogIsVisible, setRoomsDialogIsVisible] = useState(false);
+    const toggleRoomsDialogIsVisible = () => {
+    	setRoomsDialogIsVisible(!roomsDialogIsVisible);
+    };
 
     // Dialog Apartment Address
     const [apartmentAddressDialogIsVisible, setApartmentAddressDialogIsVisible] = useState(false);
     const toggleApartmentAddressDialogIsVisible = () => {
         setApartmentAddressDialogIsVisible(!apartmentAddressDialogIsVisible);
     };
-    const [addressInput, setAddressInput] = useState('');
-    const [apartmentNumInput, setApartmentNumInput] = useState('');
-    const [customerInput, setCustomerInput] = useState('');
-
-    
-    
-    
-   
-    
 
     // Dialog Apartment Delete
     const [apartmentDeleteDialogIsVisible, setApartmentDeleteDialogIsVisible] = useState(false);
     const toggleApartmentDeleteDialogIsVisible = () => {
       setApartmentDeleteDialogIsVisible(!apartmentDeleteDialogIsVisible);
     };
-
-    const deleteApartment = () => {
-        if (form.id) {
-            API.Get( {
-              method: 'deleteform',
-              id: form.id,
-              token: form.token
-            })
-            .then( res=> {
-                if (res.data.result){
-                    AsyncStorage.removeItem(`form_${form.id}`)
-                    getPreviousForms()
-                    Alert.alert('Её больше нет!')
-                    navigation.goBack()
-                } else {
-                    console.log('Server deleteApartment failed: ' + res.data);
-                }
-            })
-            .catch(err => {
-                console.log('Server deleteApartment failed: ' + err);
-            });
-        }
-    }
-
   
     // Skeletons
     if (isInitialLoading){
@@ -351,6 +410,7 @@ export default function ApartmentScreen ({navigation, route}) {
 
     let checksCountTotal = 0;
     let failChecksCountTotal = 0;
+    let imagesCountTotal = 0;
     
     const apartmentRoomsUI = form.apartment ? form.apartment.map( room => {
         const checksCount = room.nested.reduce( (sum, section) => (sum + section.nested.reduce( (sectionSum, check) => ( sectionSum + 1), 0 )), 0);
@@ -359,23 +419,33 @@ export default function ApartmentScreen ({navigation, route}) {
         const failChecksCount = room.nested.reduce( (sum, section) => (sum + section.nested.reduce( (sectionSum, check) => ( sectionSum + ( !check.value ? 1 : 0)), 0 )), 0);
         failChecksCountTotal += failChecksCount;
 
+        const imagesCount = room.nested.reduce( (sum, section) => (sum + section.nested.reduce( (sectionSum, check) => ( sectionSum + ( check.image ? 1 : 0)), 0 )), 0);
+        imagesCountTotal += imagesCount;
+
         return (
           <>
             <ListItem 
               key={room.id}
               containerStyle={{paddingHorizontal: 0, paddingVertical: 5}}
-
+			  disabled={!isFormTemplateVersionActual}
               onPress={
-                () => { navigation.navigate('Room', { 
-                  title: room.name,
-                  dictionary,
-                  form,
-                  setForm,
-                  sendForm,
-                  room, 
-                  roomId: room.id, 
-                  isOverdue
-                })}
+                () => { 
+					navigation.navigate('Room', 
+					{ 
+						AmplitudeTrack,
+						title: room.name,
+						authtoken,
+						dictionary,
+						form,
+						setForm,
+						saveForm,
+						room, 
+						roomId: room.id,
+						featuretoggles,
+						plan,
+						formImagesCount,
+						formIsOffline
+					})}
               }
             >
                 <ListItem.Content>
@@ -388,7 +458,13 @@ export default function ApartmentScreen ({navigation, route}) {
                         ): null
                     }
                 </ListItem.Content>
-                <ListItem.Chevron color={theme.lightColors.primary} containerStyle={{ height: 32 }}/>
+				{
+					isFormTemplateVersionActual ? (
+						<ListItem.Chevron color={theme.lightColors.primary} containerStyle={{ height: 32 }}/>
+					):(
+						<ListItem.Chevron color={theme.lightColors.grey} containerStyle={{ height: 32 }} type='material-community' name="lock"/>
+					)
+				}
             </ListItem>
             <Divider key={room.id+'d'} width={10} style={{ opacity: 0 }} />
           </>
@@ -396,116 +472,135 @@ export default function ApartmentScreen ({navigation, route}) {
         )
     }) : null
 
+	const minAfterLastUpdate = Math.floor((Date.now() - lastFormUpdate) / (1000*60))
 
     return (
       <>
       { isLoading ? <Text key={'isLoading'} style={{ backgroundColor: "#FEBE00", textAlign: "center", fontSize: 12, padding: 5 }}>Обновление данных</Text> : null }
       <ScrollView style={{ padding: 20}}>
         <ThemeProvider theme={theme} >
-                
-          { 
-              isOverdue ? (
-                  <BannerIsOverdued key='isOverdued'/> 
-              ) : null
-          }
 
-          {/* <BannerView 
-              key={"address"}
-              header="Адрес квартиры"
-              actionControls={
-                  <TextInput
-                      style={{
-                          height: 40,
-                          borderBottomColor: theme.lightColors.grey4,
-                          borderBottomWidth: 2,
-                          fontSize: 19,
-                          padding: 0,
-                          marginBottom: 10
-                          }}
-                      onChangeText={ setAddressInput }
-                      onEndEditing={ onEndEditingAddress }
-                      value={addressInput}
-                      placeholder="Введите адрес"
-                  />
-              }
-          /> */}
+			{ !isFormTemplateVersionActual && (
+				<BannerView 
+					key={'formIsOffline'} 
+					header={
+						<>
+							<Icon type='material-community' name="lock" color={'white'} /> Версия устарела
+						</>
+					} 
+					text='Эта приёмка создана на предыдущей версии справочников (структура приёмки). Ее больше нельзя редактировать.' 
+					backgroundColor="#d5b895" 
+					textColor="#fff"
+				/>
+			) 
+			}
+
+			{ formIsOffline ? (
+				<BannerView 
+					key={'formIsOffline'} 
+					header={
+						<>
+							<Icon type='material-community' name="signal-off" color={'white'} /> Оффлайн приёмка
+						</>
+					} 
+					text='Все измемения сохраняются локально на устройстве. Для получения отчета или заключения необходимо сохранить эту приёмку на сервер (при наличии подключения)' 
+					backgroundColor="#b6737c" 
+					textColor="#fff"
+					button={
+							<Button
+									key='saveOnline'
+									onPress={() => {
+										AmplitudeTrack('App-ApartmentScreen-List-Press', { failChecksCountTotal });
+										convertOfflineFormToOnlineForm( form )
+									}}
+									buttonStyle={{ backgroundColor: '#EEE' }}
+									titleStyle={{ color: '#000' }}
+									disabled={appIsOffline}
+								>
+									Сохранить на сервер
+							</Button>
+					}
+				/>
+			) : (
+				<>	
+          			{ lastFormUpdate && <Text style={{textAlign: 'center'}}>Сохранено { minAfterLastUpdate>0 ? `${minAfterLastUpdate} мин назад` : 'только что'} </Text>}
+					
+					<BannerView 
+						key={"report"}
+						header="Отчет"
+						text={`Всего ${inclineWord(checksCountTotal, "проверка")} и в них ${inclineWord(failChecksCountTotal, "недостаток", true)} ${( imagesCountTotal ? `с ${imagesCountTotal} фото` : '')}`}
+						button={
+							<>
+								<Button
+									key='list'
+									onPress={() => {
+										AmplitudeTrack('App-ApartmentScreen-List-Press', { failChecksCountTotal });
+										navigation.navigate('FailChecksList', { title: 'Список недостатков', content: getFailChecks(form), contentWithClauses: getFailChecks(form, true) })
+									}}
+									disabled={failChecksCountTotal == 0 || !isFormTemplateVersionActual }
+									buttonStyle={{ marginBottom: 10, backgroundColor: '#EEE' }}
+									titleStyle={{ color: '#000' }}
+								>
+									Список недостатков
+								</Button>
+								<View style={{alignContent: 'space-between', flexDirection: 'row'}}>
+									<View style={{width:'45%'}}>    
+										<Button
+											key='list'
+											onPress={() => {
+												AmplitudeTrack('App-ApartmentScreen-Blank-Press', { failChecksCountTotal });
+												navigation.navigate('Webview', { title: 'Акт осмотра', url: `${Config.Domain}/report/${(formId || form.id)}`, isSharable: true })
+											}}
+											disabled={failChecksCountTotal == 0}
+											buttonStyle={{ marginRight: 5, backgroundColor: theme.lightColors.primary }}
+										>
+											Акт осмотра
+										</Button>
+									</View>
+									<View style={{width:'55%'}}>    
+										<Button
+											key='blank'
+											onPress={() => {
+												AmplitudeTrack('App-ApartmentScreen-Blank-Press', { failChecksCountTotal });
+												navigation.navigate('Webview', { title: 'Заключение', url: `${Config.Domain}/report/${(formId || form.id)}?expert&token=${form.token}`, isSharable: true })
+											}}
+											disabled={failChecksCountTotal == 0}
+											buttonStyle={{ marginLeft: 5, backgroundColor: theme.lightColors.primary }}
+										>
+											✨Заключение
+										</Button>
+									</View>
+								</View>
+							</>
+						}
+					/>
+				</>
+			)}
 
 
-          <BannerView 
-              key={"report"}
-              header="Отчет"
-              text={`Всего ${inclineWord(checksCountTotal, "проверка")} и в них ${inclineWord(failChecksCountTotal, "недостаток", true)}`}
-              button={
-                <>
-                   <Button
-                        key='list'
-                        onPress={() => {
-                            // track('ApartmentScreen-List-Press', { failChecksCountTotal });
-                            navigation.navigate('FailChecksList', { title: 'Список недостатков', content: getFailChecks(form), contentWithClauses: getFailChecks(form, true), ProDaysLeft })
-                        }}
-                        disabled={failChecksCountTotal == 0}
-                        buttonStyle={{ marginBottom: 10, backgroundColor: '#EEE' }}
-                        titleStyle={{ color: '#000' }}
-                    >
-                        Список недостатков
-                    </Button>
-                      <View style={{alignContent: 'space-between', flexDirection: 'row'}}>
-                          <View style={{width:'45%'}}>    
-                              <Button
-                                  key='list'
-                                  onPress={() => {
-                                    // track('ApartmentScreen-Blank-Press', { failChecksCountTotal });
-                                    navigation.navigate('Webview', { title: 'Акт осмотра', url: `${Config.Domain}/report/${form.id}`, isSharable: true })
-                                }}
-                                  disabled={failChecksCountTotal == 0}
-                                  buttonStyle={{ marginRight: 5, backgroundColor: theme.lightColors.primary }}
-                              >
-                                  Акт осмотра
-                              </Button>
-                          </View>
-                          <View style={{width:'55%'}}>    
-                              <Button
-                                  key='blank'
-                                  onPress={() => {
-                                      // track('ApartmentScreen-Blank-Press', { failChecksCountTotal });
-                                      navigation.navigate('Webview', { title: 'Заключение', url: `${Config.Domain}/report/${form.id}?expert&token=${form.token}`, isSharable: true })
-                                  }}
-                                  disabled={failChecksCountTotal == 0}
-                                  buttonStyle={{ marginLeft: 5, backgroundColor: theme.lightColors.primary }}
-                              >
-                                  ✨Заключение
-                              </Button>
-                          </View>
-                      </View>
-                </>
-              }
-          />
-
-
-          <BannerView 
-              key={"rooms"}
-              header="Помещения и проверки"
-              text={ !form.apartment.length ? `Пока не добавлено ни одной комнаты` : null }
-              actionControls={apartmentRoomsUI}
-              button={
-                  <Button 
-                      type="clear"
-                      disabled={isOverdue}
-                      onPress={()=>{
-                          // track('ApartmentScreen-AddRoom-Press');
-                          toggleRoomsDialogIsVisible()
-                      }}
-                  >
-                      <Icon type='ionicon' name="add-circle-outline" color={theme.lightColors.primary} /> Добавить помещение
-                  </Button>
-              }
-          />
+			{ 
+				form.apartment && 
+				<BannerView 
+					key={"rooms"}
+					header="Помещения и проверки"
+					text={ !form.apartment.length ? `Пока не добавлено ни одной комнаты` : null }
+					actionControls={apartmentRoomsUI}
+					button={
+						<Button 
+							type="clear"
+							onPress={()=>{
+								AmplitudeTrack('App-ApartmentScreen-AddRoom-Press');
+								toggleRoomsDialogIsVisible()
+							}}
+						>
+							<Icon type='ionicon' name="add-circle-outline" color={theme.lightColors.primary} /> Добавить помещение
+						</Button>
+					}
+				/>
+			}
           
-          {/* <Text style={{textAlign: 'center'}}>{JSON.stringify( user )}</Text> */}
-
-
           {
-            formId && ProDaysLeft ? (
+            formId ? (
                 <Button 
                       key='deleteButton'
                       title="Удалить эту приёмку"
@@ -531,51 +626,21 @@ export default function ApartmentScreen ({navigation, route}) {
               
               <View style={{ alignItems: 'flex-end' }}>
 
-                  <TextInput
-                      style={{
-                          height: 40,
-                          borderBottomColor: theme.lightColors.grey4,
-                          borderBottomWidth: 2,
-                          fontSize: 19,
-                          padding: 0,
-                          marginBottom: 20,
-                          width: '100%'
-                      }}
-                      onChangeText={ setAddressInput }
-                      value={ addressInput }
-                      placeholder="Город, улица, дом, корпус"
-                  />
-
-                  <TextInput
-                      style={{
-                          height: 40,
-                          borderBottomColor: theme.lightColors.grey4,
-                          borderBottomWidth: 2,
-                          fontSize: 19,
-                          padding: 0,
-                          marginBottom: 40,
-                          width: 80,
-                          alignCo: 'right'
-                      }}
-                      onChangeText={ setApartmentNumInput }
-                      value={ apartmentNumInput }
-                      placeholder="№ кв"
-                  />
-
-                  <TextInput
-                      style={{
-                          height: 40,
-                          borderBottomColor: theme.lightColors.grey4,
-                          borderBottomWidth: 2,
-                          fontSize: 19,
-                          padding: 0,
-                          marginBottom: 10,
-                          width: '100%'
-                          }}
-                      onChangeText={ setCustomerInput }
-                      value={ customerInput }
-                      placeholder="ФИО заказчика"
-                  />
+				<Input
+					onChangeText={ setCustomerInput }
+					value={ customerInput }
+					placeholder="ФИО заказчика"
+				/>
+				<Input
+					onChangeText={ setAddressInput }
+					value={ addressInput }
+					placeholder="Город, улица, дом, корпус"
+				/>
+				<Input
+					onChangeText={ setApartmentNumInput }
+					value={ apartmentNumInput }
+					placeholder="№ кв"
+				/>
               </View>
 
               <Dialog.Actions>
@@ -583,11 +648,11 @@ export default function ApartmentScreen ({navigation, route}) {
                       title="Сохранить"
                       style={{ width: 150}} 
                       onPress={ ()=>{
-                          // track('ApartmentScreen-EditAddress-Press', { address } );
+                          AmplitudeTrack('App-ApartmentScreen-EditAddress-Press', { address } );
                           form.address = addressInput.trim(); 
                           form.apartmentNum = apartmentNumInput.trim(); 
                           form.customer = customerInput.trim(); 
-                          sendForm()
+                          saveForm()
                           toggleApartmentAddressDialogIsVisible();
                       }} 
                   />
@@ -603,7 +668,7 @@ export default function ApartmentScreen ({navigation, route}) {
             {form?.nested_templates?.filter( item => (item.type=='room') ).map((item, i) => (
                 <CheckBox
                   key={i}
-                  title={dictionary[item.id].name}
+                  title={dictionary[item.id]?.name}
                   containerStyle={{ backgroundColor: 'white', borderWidth: 0 }}
                   textStyle={{ fontSize: 16}}
                   checkedIcon={
@@ -628,12 +693,12 @@ export default function ApartmentScreen ({navigation, route}) {
                 <Dialog.Button
                   title="Добавить"
                   onPress={() => {
-                      // track('ApartmentScreen-AddRoom-DialogRoomChoise-Press' );
+                      AmplitudeTrack('App-ApartmentScreen-AddRoom-DialogRoomChoise-Press' );
                       checkedRoomIdArray.forEach( room => {
                         setForm( addRoom(room, form, dictionary ) );
                       })
                       setCheckedRoomIdArray([]);
-                      sendForm(); 
+                      saveForm(); 
                       toggleRoomsDialogIsVisible();
                   }}
                 />
@@ -660,7 +725,11 @@ export default function ApartmentScreen ({navigation, route}) {
                         titleStyle={{color: "red"}}
                         title="Да, удалить" 
                         onPress={()=>{
-                            deleteApartment(form)
+							if (form.isOffline){
+								deleteOfflineForm(formId)
+							} else {
+								deleteOnlineForm(formId)
+							}
                             toggleApartmentDeleteDialogIsVisible()
                         }} 
                     />

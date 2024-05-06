@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Приёмка.Москва",
+    "name": "Приёмка Москва",
     "slug": "priemka-moscow",
-    "version": "1.1.1",
+    "version": "2.2.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -16,15 +16,15 @@
     ],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.stumarkin.priemka-moscow",
-      "buildNumber": "1"
+      "bundleIdentifier": "com.stumarkin.priemkamoscow",
+      "buildNumber": "15"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "versionCode": 1,
+      "versionCode": 15,
       "package": "com.stumarkin.priemkamoscow"
     },
     "web": {
@@ -35,6 +35,16 @@
         "projectId": "515b1c26-1182-4762-adda-96d32b168e2c"
       }
     },
-    "owner": "stumarkin"
+    "owner": "stumarkin",
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera",
+          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone",
+          "recordAudioAndroid": true
+        }
+      ]
+    ]
   }
 }

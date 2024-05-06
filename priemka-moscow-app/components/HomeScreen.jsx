@@ -2,7 +2,6 @@
 /**
  * @author Sergey Tumarkin https://tumarkin.me
  */
-
 import { useState, useEffect, useCallback } from 'react';
 import { BannerView, BannerNeedUpdate } from './BannerView';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -13,7 +12,6 @@ import {
     View, 
     Platform,
     ScrollView, 
-    TextInput,
     RefreshControl
 } from 'react-native';
 import { 
@@ -21,24 +19,28 @@ import {
     Text, 
     Button, 
     CheckBox,
+    ListItem,
+    Switch,
     Dialog,
     Divider,
-    ListItem,
-    Skeleton
+    Skeleton,
+    Input,
+    Icon
 } from '@rneui/themed';
 import { theme } from './theme';
 import * as API from '../data/API';
 import * as Config from '../data/Config';
 import * as SecureStore from 'expo-secure-store';
-
-import { init, track } from '@amplitude/analytics-react-native';
-
 import * as Application from 'expo-application';
+import InstaStory from 'react-native-insta-story';
+
+import * as Amplitude from '@amplitude/analytics-react-native';
+const AmplitudeTrack = (name,obj) => Amplitude.track(name,obj)
 
 const inclineWord = ( howMany, ofWhat, humanicStyle = false ) => {
     switch (ofWhat){
         case "недостаток":
-            if ([11,12,13,14].includes(howMany)){
+            if ([10,11,12,13,14].includes(parseInt(howMany))){
                 return `${howMany} недостатков`;
             }
             switch ( howMany - (Math.floor(howMany/10)*10) ){
@@ -51,7 +53,7 @@ const inclineWord = ( howMany, ofWhat, humanicStyle = false ) => {
             }
         
         case "проверка":
-            if ([11,12,13,14].includes(howMany)){
+            if ([11,12,13,14].includes(parseInt(howMany))){
                 return `${howMany} проверок`;
             }
             switch ( howMany - (Math.floor(howMany/10)*10) ){
@@ -63,7 +65,7 @@ const inclineWord = ( howMany, ofWhat, humanicStyle = false ) => {
             }
 
         case "приёмка":
-            if ([11,12,13,14].includes(howMany)){
+            if ([11,12,13,14].includes(parseInt(howMany))){
                 return `${howMany} приёмок`;
             }
             switch ( howMany - (Math.floor(howMany/10)*10) ){
@@ -74,7 +76,7 @@ const inclineWord = ( howMany, ofWhat, humanicStyle = false ) => {
                 default: return `${howMany} приёмок`
             }
         case "день":
-            if ([11,12,13,14].includes(howMany)){
+            if ([11,12,13,14].includes(parseInt(howMany))){
                 return `${howMany} дней`;
             }
             switch ( howMany - (Math.floor(howMany/10)*10) ){
@@ -85,7 +87,7 @@ const inclineWord = ( howMany, ofWhat, humanicStyle = false ) => {
                 default: return `${howMany} дней`
             }
         case "минута":
-            if ([11,12,13,14].includes(howMany)){
+            if ([11,12,13,14].includes(parseInt(howMany))){
                 return `${howMany} минут`;
             }
             switch ( howMany - (Math.floor(howMany/10)*10) ){
@@ -133,62 +135,97 @@ const getDeviceId = async () => {
 const getTimeElapsed = ( timestamp ) => {
     const millis = Date.now() - timestamp;
     const secondsElapsed = Math.floor(millis / 1000);
-    if (secondsElapsed<60) {
+    if (secondsElapsed < 60) {
         return 'только что '
-     } else  if (secondsElapsed<60*60) {
-        return inclineWord(Math.floor(secondsElapsed/60), 'минута') + ' назад'
-     } else  if (secondsElapsed<(60*60*24)) {
-        return inclineWord(Math.floor(secondsElapsed/(60*60)), 'час') + ' назад'
-     } else {
-        return inclineWord(Math.floor(secondsElapsed/(60*60*24)), 'день') + ' назад'
-     }
+    } else if (secondsElapsed < 60 * 60) {
+        return inclineWord(Math.floor(secondsElapsed / 60), 'минута') + ' назад'
+    } else if (secondsElapsed < (60 * 60 * 24)) {
+        return inclineWord(Math.floor(secondsElapsed / (60 * 60)), 'час') + ' назад'
+    } else {
+        return inclineWord(Math.floor(secondsElapsed / (60 * 60 * 24)), 'день') + ' назад'
+    }
 }
 
 
 
 export default function HomeScreen ({navigation, route}) {
-    const setIsSignedIn = ( val ) => route.params.setIsSignedIn( val );
-    const setUser = ( val ) => route.params.setUser( val );
-
-    const [refreshing, setRefreshing] = useState(false);
-
+    const { 
+        authtoken,
+        username,
+        appIsOffline
+     } = route.params;
+    const setAuthtoken = ( val ) => route.params.setAuthtoken( val );
+    
     const [isInitialLoading, setIsInitialLoading] = useState(true);
-    const [previousForms, setPreviousForms] = useState([]);
+    const [isFormsUpdating, setIsFormsUpdating] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
+    
+    const [formIsOffline, setFormIsOffline] = useState(appIsOffline);
+    
+    const [template, setTemplate] = useState( {} );
+    const [designTypes, setDesignTypes] = useState( [] );
+    const [designTypeSelected, setDesignTypeSelected] = useState( 0 );
+    
+    const [onlineForms, setOnlineForms] = useState([]);
+    const [offlineForms, setOfflineForms] = useState([]);
+    
     const [banners, setBanners] = useState([]);
+    const [stories, setStories] = useState([]);
     const [deviceId, setDeviceId] = useState(null)
-    const [ProDaysLeft, setProDaysLeft] = useState( true )
-    const [appVersion, setAppVersion] = useState( Application.nativeApplicationVersion )
-    const [appPlatform, setAppPlatform] = useState( Platform.OS )
+    
     const [appUpdateUrl, setAppUpdateUrl] = useState('')
     const [counter, setCounter] = useState( 0 )
-
-    const { designTypes, user } = route.params;
-    const setSquare = ( val ) => route.params.setSquare( val );
-    const setDesignTypeSelected = ( val ) => route.params.setDesignTypeSelected( val );
-    const [square, setSquareLocal] = useState( 0 );
-    const [designTypeSelected, setDesignTypeSelectedLocal] = useState( 0 );
+    
+    const [name, setName] = useState('Приёмка Про')
+    const [plan, setPlan] = useState(null)
+    
+    const [featuretoggles, setFeaturetoggles] = useState({ 
+        offline: false,
+        photo: false
+    })
 
     const onRefresh = useCallback(() => {
-        setRefreshing(true);
-        getPreviousForms();
+        setRefreshing(true)
+        getForms()
+        getStories()
     }, []);
 
+    const getForms = () => {
 
-    const getPreviousForms = () => {
-        API.Get({ method:'getforms', userid: user.id})
-        .then(res => {
-            if (res.data.result === true ){
-                setPreviousForms( res.data.forms );
-            } else {
-                setPreviousForms( [] );
-                console.log( 'getforms result false. API response:\n' + JSON.stringify(res.data) ) 
-            }
+        //offline forms
+        AsyncStorage.getAllKeys()
+        .then( keys => {
+            AsyncStorage.multiGet( keys.filter( filter => filter.indexOf('form_')==0 ))
+            .then( entries => {
+                let forms = entries.map(([id, form_json]) => {
+                    let {address, apartmentNum, isOffline} = JSON.parse(form_json)
+                    return {id, address, apartmentNum, isOffline: true}
+                })
+                setOfflineForms( forms )
+            })
         })
-        .finally(()=>{
-            setRefreshing(false);
+
+        //online forms
+        if (!appIsOffline){
+            setIsFormsUpdating(true)
+
+            API.Get({ method:'getforms', authtoken })
+            .then(res => {
+                if (res.data.result === true ){
+                    setOnlineForms( res.data.forms );
+                } else {
+                    setOnlineForms( [] );
+                    console.log( 'getforms result false. API response:\n' + JSON.stringify(res.data) ) 
+                }
+            })
+            .finally(()=>{
+                setRefreshing(false);
+                setIsInitialLoading(false)
+                setIsFormsUpdating(false)
+            })
+        } else {
             setIsInitialLoading(false)
-
-        })
+        }
     }
 
     // Dialog Apartment Address
@@ -200,56 +237,134 @@ export default function HomeScreen ({navigation, route}) {
     const [apartmentNum, setApartmentNum] = useState('');
     const [customer, setCustomer] = useState('');
     
-    
-    // Dialog Apartment Square
-    const [apartmentSquareDialogIsVisible, setApartmentSquareDialogIsVisible] = useState(false);
-    const toggleApartmentSquareDialogIsVisible = () => {
-        setApartmentSquareDialogIsVisible(!apartmentSquareDialogIsVisible);
-    };    
-    
     // Dialog Account Exit 
     const [accountExitDialogIsVisible, setAccountExitDialogIsVisible] = useState(false);
     const toggleAccountExitDialogIsVisible = () => {
         setAccountExitDialogIsVisible(!accountExitDialogIsVisible);
     };    
     
+    const updateLocalTemplate = ( localversion = 0 ) => {
+        API.Get({ method:'gettemplate', localversion, authtoken })
+        .then(({data}) => {
+            const {result, needtoupdate, template } = data
+            if ( needtoupdate === true ){
+                template.timestamp = Date.now()
+                setTemplate( template ) 
+                AsyncStorage.setItem( "template", JSON.stringify(template) )
+            } else {
+                // console.log( 'gettemplate result false. API response:\n' + JSON.stringify(res.data) ) 
+            }
+        })
+        .catch( err => {
+            console.log( 'gettemplate error. \n' + JSON.stringify(err) ) 
+        })
+    }
+
+    const getBanners = () => {
+        API.Get({ method:'getbanners', authtoken})
+        .then(({data}) => {
+            const {result, banners} = data
+            if (result && banners){
+                setBanners( banners );
+            } else {
+                Alert.alert('Ошибка загрузки данных', 'getbanners')
+                console.log( 'Banner load fail. API response:\n' + JSON.stringify(res.data) ) 
+            }
+        })
+    }
+
+    const getStories = () => {
+        API.Get({ method:'getstories', authtoken})
+        .then(({data}) => {
+            console.log(data)
+            const {result, stories} = data
+            if (result && stories){
+                setStories( stories );
+            } else {
+                Alert.alert('Ошибка загрузки данных', 'getstories')
+                console.log( 'stories load fail. API response:\n' + JSON.stringify(res.data) ) 
+            }
+        })
+    }
 
     // Initial
     useEffect(() => {
         getDeviceId()
-        .then(deviceId =>{ 
-            setDeviceId(deviceId)
-            init( Config.AmplitudeKey, deviceId);
-            // track('HomeScreen-View', {appPlatform, appVersion});
-              
+        .then(deviceid =>{ 
+            setDeviceId(deviceid)
+
+            if (appIsOffline){
+                // local featuretoggles
+                AsyncStorage.getItem('featuretoggles')
+                .then( featuretoggles_json => {
+                    setFeaturetoggles( featuretoggles_json ? JSON.parse(featuretoggles_json) : Config.FeatureToggles );
+                })
+                // local saved plan
+                AsyncStorage.getItem('plan')
+                .then( plan_json => {
+                    setPlan( JSON.parse(plan_json) );
+                })
+            } else {
+                // config
+                API.Get({ method:'getconfig', authtoken, deviceid, platform: Platform.OS, appversion: Application.nativeApplicationVersion })
+                .then( ({data}) => {
+                    console.log( data ) 
+                    const {designtypes, appupdateurl, featuretoggles} = data
+                    setDesignTypes( designtypes )
+                    setAppUpdateUrl( appupdateurl );
+                    setFeaturetoggles( featuretoggles );
+                    AsyncStorage.setItem( "featuretoggles", JSON.stringify(featuretoggles) )
+                })
+                .catch( err => {
+                    Alert.alert('Ошибка загрузки данных', err)
+                })
+                
+                //plan
+                API.Get({ method:'getaccountplan', authtoken })
+                .then(({data}) => {
+                    console.log( data ) 
+                    const {result, plan} = data
+                    if (result){
+                        setPlan(plan)
+                    }
+                    AsyncStorage.setItem( "plan", JSON.stringify(plan) )
+                })
+                .catch( err => {
+                    Alert.alert('Ошибка загрузки данных', err)
+                    console.log( 'getaccountplan error. \n' + JSON.stringify(err) ) 
+                })
+
+                getBanners()
+                getStories()
+    
+                Amplitude.init( Config.AmplitudeKey, username, {
+                    deviceId: deviceid,
+                    appVersion: Application.nativeApplicationVersion,
+                    platform: 'Mobile'
+                });
+                
+                AmplitudeTrack('App-HomeScreen-View');
+            }
+            
+
+            // template (from local storage and check/update it from API)
+            // AsyncStorage.removeItem('template')
+            AsyncStorage.getItem('template')
+            .then( template_json => {
+                const template = JSON.parse( template_json )
+                setTemplate( template ) 
+                if (!appIsOffline){
+                    updateLocalTemplate( template?.version  )
+                }
+            })
         } )
-        
-        API.Get({ method:'getbanners', platform:appPlatform})
-        .then(res => {
-            if (res.data.result === true ){
-                setBanners( res.data.banners );
-            } else {
-                console.log( 'Banner load fail. API response:\n' + JSON.stringify(res.data) ) 
-            }
-        })
-
-
-        API.Get({ method:'needupdate', platform:appPlatform, appversion:appVersion })
-        .then(res => {
-            if (res.data.result === true ){
-                setAppUpdateUrl( res.data.appupdateurl );
-            } else {
-                console.log( 'Needupdate load fail. API response:\n' + JSON.stringify(res.data) ) 
-            }
-        })
     }, []); 
 
     useFocusEffect(
         useCallback(() => {
-            getPreviousForms()
+            getForms()
         }, [])
     );
-    
 
 
     // Banners with sections sorting
@@ -257,11 +372,10 @@ export default function HomeScreen ({navigation, route}) {
     const bannerSections = banners?.map(({section})=>(section)).filter( (item, i, arr) => arr.indexOf(item) === i );
     bannerSections?.forEach( section_ => {bannersUI[section_] = banners.filter( ({section}) => section == section_ ).map( (banner, key) => (
         <BannerView {...banner} key={key} onPress={() =>{
-            // track('HomeScreen-Banner-Press', {banner: banner.header }); 
+            AmplitudeTrack('App-HomeScreen-Banner-Press', {banner: banner.header }); 
             navigation.navigate('Webview', {title: '', deviceid: deviceId, callback: ()=>{setCounter(counter+1)}, url: banner.webviewUrl + (banner.webviewUrl.indexOf('?')>-1 ? '&' : '?') + 'deviceid=' + deviceId })
          }}/>
     ))} )
-
 
     return (
         <ScrollView 
@@ -276,7 +390,7 @@ export default function HomeScreen ({navigation, route}) {
                             flexDirection: 'row'
                         }}
                     >
-                        <Text style={{fontSize: 36, fontWeight: 700, marginBottom: 20}}>{Config.CompanyName}</Text>
+                        <Text style={{fontSize: 36, fontWeight: 700, marginBottom: 20}}>{plan?.accountname}</Text>
                     </View>
                     
                     {
@@ -290,9 +404,52 @@ export default function HomeScreen ({navigation, route}) {
                             </>
                         ) : (
                             <>
+            
+                                { appIsOffline && <BannerView 
+                                                    key={'offline'} 
+                                                    header={
+                                                        <>
+                                                            <Icon type='material-community' name="signal-off" color={'white'} /> Отсутствует интернет
+                                                        </>
+                                                    } 
+                                                    text='Доступна приёмка оффлайн' 
+                                                    backgroundColor="#b6737c" 
+                                                    textColor="#fff"
+                                                />
+                                }
+
+                                {
+                                    stories.length > 0 &&
+                                    <InstaStory
+                                        data={stories}
+                                        style={{marginBottom:10}}
+                                        storyAvatarImageStyle={{display:'none'}}
+                                        duration={10}
+                                        avatarSize={90}
+                                        avatarImageStyle={{borderRadius:5}}
+                                        avatarWrapperStyle={{marginVertical:10,margin:0}}
+                                        avatarTextStyle={{fontSize:14}}
+                                        unPressedBorderColor={'#eee'}
+                                        pressedBorderColor={'#eee'}
+                                    />
+                                }
+
+                                { plan?.days_left<4 && <BannerView 
+                                                    key={'paymentRequired'} 
+                                                    header={
+                                                        <>
+                                                            <Icon type='material-community' name="clock-alert-outline" color={'white'} /> {(plan?.id>1 ? "Требуется оплата": "Демо-режим")}
+                                                        </>
+                                                    } 
+                                                    text={ plan?.days_left<0 ? 'Оплаченный период завершился' : `До конца оплаченного периода - ${plan?.days_left} дн` }
+                                                    backgroundColor={ plan?.days_left<0 ? "red" : "#f14908" } 
+                                                    textColor="#fff"
+                                                />
+                                }
+
                                 { 
                                     appUpdateUrl ? (
-                                        <BannerNeedUpdate key={'needupdate'}  appUpdateUrl={appUpdateUrl} track={track}/> 
+                                        <BannerNeedUpdate key={'needupdate'}  appUpdateUrl={appUpdateUrl} track={AmplitudeTrack}/> 
                                     ) : null
                                 }
 
@@ -301,47 +458,55 @@ export default function HomeScreen ({navigation, route}) {
                                 <BannerView 
                                     key={'new'}
                                     header='Новая приёмка'
-                                    text= 'Сегодня всё получится. Вас не остановить!' 
+                                    text= { plan?.days_left<0 ? 'Оплатите тариф для новых приёмок' : 'Сегодня всё получится. Вас не остановить!' }
                                     button={ <Button
                                                 title='Начать приёмку' 
                                                 onPress={() =>{
-                                                    // track('HomeScreen-NewAcceptance-Press' );
+                                                    AmplitudeTrack('App-HomeScreen-NewAcceptance-Press' );
                                                     toggleApartmentAddressDialogIsVisible();
                                                 }}
+                                                disabled={plan?.days_left<0}
                                             />
                                     }
-                                />                
+                                />               
                                 
                                 <BannerView 
                                     key={'prev'}
                                     header='Предыдущие приёмки'
-                                    text= { previousForms.length==0 ? 'Здесь появятся все ваши приемки. Указывайте адрес приёмки для удобного поиска в общем списке' : null }
+                                    text= { onlineForms.length==0 ? 'Здесь появятся все ваши приемки. Указывайте адрес приёмки для удобного поиска в общем списке' : null }
                                     actionControls={
-                                        previousForms.map( value => {
+                                        [...offlineForms, ...onlineForms].map( form => {
                                             return (
                                                     <ListItem 
-                                                        key={value.id} 
+                                                        key={form.id} 
                                                         containerStyle={{paddingHorizontal: 0}}
                                                         onPress={ () =>{ 
-                                                            // track('HomeScreen-PrevAcceptance-Press');
-                                                            navigation.navigate('Apartment', { user, formId: value.id, getPreviousForms, ProDaysLeft }) 
+                                                            AmplitudeTrack('App-HomeScreen-PrevAcceptance-Press');
+                                                            navigation.navigate('Apartment', { AmplitudeTrack, appIsOffline, template, authtoken, featuretoggles, plan, formId: form.id, formIsOffline: form.isOffline, getForms }) 
                                                         }}
+                                                        disabled={isFormsUpdating}
+                                                        disabledStyle={{opacity: 0.5}}
                                                     >
                                                         <ListItem.Content>
-                                                            <ListItem.Title style={{fontWeight: 600}}>{value.address ? value.address : 'Без адреса'}</ListItem.Title>
-                                                            <ListItem.Subtitle style={{fontSize: 14}}>{inclineWord(value.failChecksCountTotal, "недостаток", true)}{ value.timestamp ? `, ${getTimeElapsed(Date.parse(value.timestamp))}` : null}</ListItem.Subtitle>
+                                                            <ListItem.Title style={{fontWeight: 600}}>{form.address ? `${form.address} ${form.apartmentNum}` : 'Без адреса'}</ListItem.Title>
+                                                            {form.isOffline ? (
+                                                                <ListItem.Subtitle style={{fontSize: 14, color: '#b6737c'}}>оффлайн</ListItem.Subtitle>
+                                                            ) : (
+                                                                <ListItem.Subtitle style={{fontSize: 14}}>{inclineWord(form.failChecksCountTotal, "недостаток", true)}{ form.timestamp ? `, ${getTimeElapsed(Date.parse(form.timestamp))}` : null}</ListItem.Subtitle>
+                                                            )}
                                                         </ListItem.Content>
                                                         <ListItem.Chevron />
                                                     </ListItem>
                                             )
-                                    })}
-                                />                
+                                        })
+                                    }
+                                />             
 
                                 {bannersUI.bottom}
                                 
                                 <Button 
                                     key='exitButton'
-                                    title="Выйти"
+                                    title="Профиль"
                                     type="clear"
                                     titleStyle={{ color: "grey"}}
                                     onPress={toggleAccountExitDialogIsVisible}
@@ -355,70 +520,89 @@ export default function HomeScreen ({navigation, route}) {
                         key={'apartmentAddress'}
                         isVisible={apartmentAddressDialogIsVisible}
                         onBackdropPress={toggleApartmentAddressDialogIsVisible}
+                        overlayStyle={ {marginTop:-150} }
                     >
                         <Text style={{fontSize: 22, fontWeight: 700}}>
-                            Адрес объекта и заказчик
+                            Новая приёмка
                         </Text>
                         
-                        <View style={{ alignItems: 'flex-end' }}>
-
-                            <TextInput
-                                style={{
-                                    height: 40,
-                                    borderBottomColor: theme.lightColors.grey4,
-                                    borderBottomWidth: 2,
-                                    fontSize: 19,
-                                    padding: 0,
-                                    marginBottom: 20,
-                                    width: '100%'
-                                }}
+                        <View>
+                            <Input
+                                onChangeText={ setCustomer }
+                                value={ customer }
+                                placeholder="ФИО заказчика"
+                            />
+                            <Input
                                 onChangeText={ setAddress }
                                 value={address}
                                 placeholder="Город, улица, дом, корпус"
                             />
-
-                            <TextInput
-                                style={{
-                                    height: 40,
-                                    borderBottomColor: theme.lightColors.grey4,
-                                    borderBottomWidth: 2,
-                                    fontSize: 19,
-                                    padding: 0,
-                                    marginBottom: 40,
-                                    width: 80,
-                                    alignCo: 'right'
+                            <Input
+                                inputContainerStyle={{
+                                    // width: '20%',
                                 }}
                                 onChangeText={ setApartmentNum }
                                 value={ apartmentNum }
                                 placeholder="№ кв"
                             />
+                            <View style={{ marginLeft: 0}}>
+                                {designTypes.map((designType, i) => (
+                                    <CheckBox
+                                        key={i}
+                                        title={designType}
+                                        checkedIcon="dot-circle-o"
+                                        uncheckedIcon="circle-o"
+                                        checked={designTypeSelected == i}
+                                        onPress={() => setDesignTypeSelected(i)}
+                                        containerStyle={{ 
+                                            backgroundColor: 'white', 
+                                            borderWidth: 0,
+                                            marginBottom: 5,
+                                            padding: 0
+                                        }}
+                                    />
+                                ))}
+                            </View>
 
-                            <TextInput
-                                style={{
-                                    height: 40,
-                                    borderBottomColor: theme.lightColors.grey4,
-                                    borderBottomWidth: 2,
-                                    fontSize: 19,
-                                    padding: 0,
-                                    marginBottom: 10,
-                                    width: '100%'
-                                    }}
-                                onChangeText={ setCustomer }
-                                value={ customer }
-                                placeholder="ФИО заказчика"
-                            />
+                            {
+                                featuretoggles?.offline && !!+plan?.feature_offline && 
+                                <>
+                                    <Divider width={1} style={{marginHorizontal:5, marginTop: 30}} color="grey" />
+
+                                    <View style={{ marginLeft: 0}}>
+                                        <ListItem key="formIsOffline">
+                                            <ListItem.Content>
+                                                <ListItem.Title>Oффлайн</ListItem.Title>
+                                            </ListItem.Content>
+                                            <Switch
+                                                value={ formIsOffline }
+                                                onValueChange={() => {
+                                                    setFormIsOffline( !formIsOffline )
+                                                }}
+                                                color="#b6737c"
+                                                disabled={appIsOffline}
+                                            />
+                                        </ListItem>
+                                    </View>
+                                </>
+                            }
                         </View>
 
                         <Dialog.Actions>
-                            <Button 
-                                title="Далее"
-                                style={{ width: 100}} 
-                                onPress={ ()=>{
-                                    // track('HomeScreen-NewAcceptance-Address-Press', { address } );
-                                    toggleApartmentAddressDialogIsVisible();
-                                    toggleApartmentSquareDialogIsVisible();
-                                }} 
-                            />
+                                <Button 
+                                    title="Далее"
+                                    containerStyle={{
+                                        width: '100%'
+                                    }}
+                                    onPress={ ()=>{
+                                        AmplitudeTrack('App-HomeScreen-NewAcceptance-Address-Press', { address } );
+                                        toggleApartmentAddressDialogIsVisible();
+                                        navigation.navigate('Apartment', { AmplitudeTrack, appIsOffline, template, authtoken, featuretoggles, plan, formId: null, formIsOffline, address, apartmentNum, customer, designTypeSelected, designTypes, getForms });
+                                        setApartmentNum('')
+                                        setAddress('')
+                                        setCustomer('')
+                                    }} 
+                                />
                         </Dialog.Actions>
                     </Dialog>
 
@@ -427,96 +611,28 @@ export default function HomeScreen ({navigation, route}) {
                         isVisible={accountExitDialogIsVisible}
                         onBackdropPress={toggleAccountExitDialogIsVisible}
                     >
-                        <Text style={{fontSize: 22, fontWeight: 700}}>
-                            Учетная запись
-                        </Text>
-                        
+                        <Text style={{fontSize: 22, fontWeight: 700}}>Профиль</Text>
                         <View>
-                            <Text>Аккаунт: {user.username}</Text>
-                            <Text>Устройство: {deviceId}</Text>
-                            <Text>Авторизация до: { user.signedInTimeout }</Text>
+                            <Text>{Application.applicationName} {Application.nativeApplicationVersion}</Text>
+                            <Text>User {username}</Text>
+                            <Text>Auth {authtoken}</Text>
+                            <Text>Device {deviceId}</Text>
+                            <Text>Template v{ template?.version }, {template?.timestamp ? new Date(template.timestamp).toISOString().slice(0, 19).replace('T', ' ') : ''}</Text>
+                            {/* <Text>Тариф: "{plan?.name}" оплачен еще {plan?.days_left} дн</Text> */}
                         </View>
-
                         <Dialog.Actions>
                             <Button 
-                                title={`Выйти из учетной записи`}
+                                title={`Выйти`}
                                 onPress={ ()=>{
-                                    // track('HomeScreen-NewAcceptance-Address-Press', { address } );
-                                    AsyncStorage
-                                    .setItem( "user", JSON.stringify({...user, signedInTimeout: Date.now() }))
-                                    .then( ()=>setIsSignedIn(false) )
+                                    AmplitudeTrack('App-HomeScreen-NewAcceptance-Address-Press', { address } );
+                                    AsyncStorage.setItem( "authtoken", '' )
+                                    setAuthtoken(false)
+                                    // navigation.goBack()
+                                    // navigation.navigate('SignIn', {  }) 
+
                                     toggleAccountExitDialogIsVisible();
-                                }} 
-                            />
-                        </Dialog.Actions>
-                    </Dialog>
-
-
-
-                    <Dialog
-                        key={'apartmentSquare'}
-                        isVisible={apartmentSquareDialogIsVisible}
-                        onBackdropPress={toggleApartmentSquareDialogIsVisible}
-                    >
-                        <Text style={{fontSize: 22, fontWeight: 700}}>
-                            Площадь и тип отделки
-                        </Text>
-
-                        <View style={{
-                            flexDirection: 'row',
-                            flexWrap: 'wrap',
-                        }}
-                        >               
-                            <TextInput
-                                style={{
-                                    height: 40,
-                                    borderBottomColor: theme.lightColors.grey3,
-                                    borderBottomWidth: 2,
-                                    fontSize: 28,
-                                    padding: 2,
-                                    marginLeft: 10,
-                                    marginRight: 10,
-                                    width: 55
                                 }}
-                                inputMode='numeric'
-                                onChangeText={ setSquareLocal }
-                                placeholder="00"
-                                value={square}
-                            />
-                            <Text style={{ fontSize: 22, marginTop: 10 }}>м²</Text>
-                        </View>
-                        
-                        <View style={{ marginLeft: 0}}>
-                            {designTypes.map((designType, i) => (
-                                <CheckBox
-                                    key={i}
-                                    title={designType.name}
-                                    checkedIcon="dot-circle-o"
-                                    uncheckedIcon="circle-o"
-                                    checked={designTypeSelected == i}
-                                    onPress={() => setDesignTypeSelectedLocal(i)}
-                                    containerStyle={{ 
-                                        backgroundColor: 'white', 
-                                        borderWidth: 0,
-                                        marginBottom: 5,
-                                        padding: 0
-                                    }}
-                                />
-                            ))}
-                        </View>
-
-                        <Dialog.Actions>
-                            <Button 
-                                title="Далее"
-                                style={{ width: 100}} 
-                                onPress={ ()=>{
-                                    // track('HomeScreen-NewAcceptance-Square-Press', { address } );
-                                    setDesignTypeSelected(designTypeSelected)
-                                    navigation.navigate('Apartment', { user, address, apartmentNum, customer, designTypeSelected, designTypes, getPreviousForms });
-                                    toggleApartmentSquareDialogIsVisible()
-                                    setSquare(square)
-                                    setAddress('');
-                                }} 
+                                containerStyle={{width: '100%'}} 
                             />
                         </Dialog.Actions>
                     </Dialog>

@@ -1,12 +1,12 @@
 import { ThemeProvider, createTheme, lightColors, Text, Button } from '@rneui/themed';
 
 export const theme = createTheme({
-  lightColors: {
-    ...Platform.select({
-      default: lightColors.platform.android,
-      ios: lightColors.platform.ios,
-    }),
-  },
+  // lightColors: {
+  //   ...Platform.select({
+  //     default: lightColors.platform.android,
+  //     ios: lightColors.platform.ios,
+  //   }),
+  // },
   components: {
       Text: {
         style: {

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { 
     StyleSheet, 
-    Share
+    Share,
+    Linking
 } from 'react-native';
 import { 
     Button
@@ -39,6 +40,9 @@ export default function WebviewScreen ({navigation, route}) {
     
         if (url.includes('#callback')) {
           callback()
+        } else if (!url.includes('/webview/') && !url.includes('ampproject') && !url.includes('report') ) {
+          Linking.openURL(url);
+          return false;
         }
       };
 
