@@ -37,7 +37,7 @@ function App() {
   }
 
   return (
-    <div className='col-lg-8 mx-auto p-4 py-md-5'>
+    <div className='col-lg-8 mx-auto p-4 py-md-5'>а к
       <header class="d-flex align-items-center pb-3 mb-5 border-bottom">
         <a href="/" class="d-flex align-items-center text-body-emphasis text-decoration-none">
           <span class="fs-4">Приемка.Москва &middot; Панель управления</span>

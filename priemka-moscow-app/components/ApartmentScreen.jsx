@@ -4,7 +4,6 @@
 
 import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as SecureStore from 'expo-secure-store';
 import {BannerView} from './BannerView';
 import { 
   Alert, 
@@ -294,6 +293,11 @@ export default function ApartmentScreen ({navigation, route}) {
 		})
 	}
 
+	function removeControlCharacters(jsonString) {
+		// Use a regular expression to replace control characters with an empty string
+		return jsonString.replace(/[\u0000-\u001F]/g, '<br>');
+	}
+
     const deleteOnlineForm = ( id ) => {
 		API.Get( { method: 'deleteform', id, authtoken })
 		.then( ({data})=> {
@@ -331,7 +335,19 @@ export default function ApartmentScreen ({navigation, route}) {
 					.then( form_json => renderForm( JSON.parse(form_json) ))
 				} else {
 					API.Get({ method: 'getform', id: formId, authtoken })
-					.then( ({data}) => renderForm( JSON.parse(data.form) ) )
+					.then( ({data}) => {
+						let form;
+						try {
+							form = JSON.parse(data.form);
+						} catch (e) {
+							Alert.alert("Ошибка загрузки", `${formId}\n${e.toString()}\n\nОтправьте скриншот этой ошибки разработчику.`)
+							setIsInitialLoading(false)
+							form = JSON.parse(removeControlCharacters(data.form))
+							// return console.error(e); // error in the above string (in this case, yes)!
+						}
+						renderForm( form ) 
+					}
+				)
 				}
 			} else {
 				let form = JSON.parse(JSON.stringify( {...template.form, authtoken, address, apartmentNum, customer, designTypeSelected, timestampCreate: Date.now()} ));

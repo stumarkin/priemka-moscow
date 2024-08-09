@@ -16,6 +16,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Icon } from '@rneui/themed';
 import * as NavigationBar from 'expo-navigation-bar';
+import * as Application from 'expo-application';
 import { 
   Platform,
 } from 'react-native';
@@ -25,6 +26,8 @@ Sentry.init({
   enableNative: false,
   dsn: "https://66aac3c0bde75caa5d81e71d33438809@o4506547929088000.ingest.sentry.io/4506753429602304",
   tracesSampleRate: 1.0,
+  attachScreenshot: true,
+  release: Application.nativeApplicationVersion
 });
 
 const Tab = createBottomTabNavigator();

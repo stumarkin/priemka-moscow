@@ -17,6 +17,7 @@ import {
     Dialog,
     Divider,
     Icon,
+    Input,
     ListItem,
     Switch,
     Text,
@@ -86,6 +87,8 @@ export default function RoomScreen ({navigation, route}) {
     const [comment, setComment] = useState(escapeBR(room.comment))
     const [checkComment, setCheckComment] = useState('')
     // const [isCheckDialogInputFocused, setIsCheckDialogInputFocused] = useState(false);
+
+    const [searchStr, setSearchStr] = useState('');
 
     const [formImagesCount, setFormImagesCount] = useState(0);
 
@@ -218,53 +221,54 @@ export default function RoomScreen ({navigation, route}) {
     
 
     const roomSections = room.nested.map( section => {
-        const sectionChecks = section.nested.map( check => {
-            return (
-                <ListItem 
-                    key={check.id}
-                    onPress={ () => {
-                        // setCheckDetails(check)
-                        // toggleCheckDetailsDialogIsVisible()
-                        navigation.navigate('Check', { 
-                            AmplitudeTrack,
-                            saveForm,
-                            forceUpdate,
-                            check,
-                            form,
-                            dictionary,
-                            authtoken,
-                            featuretoggles,
-                            plan,
-                            formIsOffline,
-                        })
-                    }}
-                    containerStyle={ check.value===false ? {backgroundColor: "#FFE4E1"} : {} }
-                >
-                    <ListItem.Content>
-                        <ListItem.Title>&bull; {dictionary[check.id].name}</ListItem.Title>
-                        <ListItem.Subtitle style={(check.comment || check.image) && {margin:15} }>{escapeBR(check.comment)} {check.image && '🖼'}</ListItem.Subtitle>
-                    </ListItem.Content>
-                    
-                    {
-                        <Switch
-                            value={!check.value}
-                            onValueChange={() => {
-                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-                                check.value = !check.value;
-                                saveForm();
-                                forceUpdate();
-                            }}
-                            color="#900603"
-                        />
-                    }
-                    
-                </ListItem>
-            )
-        })
+        const sectionChecks = section.nested.filter( check => dictionary[check.id].name.toLowerCase().includes( searchStr.toLowerCase() ) )
+        const sectionChecksUI = sectionChecks.map( check => {
+                                    return (
+                                        <ListItem 
+                                            key={check.id}
+                                            onPress={ () => {
+                                                // setCheckDetails(check)
+                                                // toggleCheckDetailsDialogIsVisible()
+                                                navigation.navigate('Check', { 
+                                                    AmplitudeTrack,
+                                                    saveForm,
+                                                    forceUpdate,
+                                                    check,
+                                                    form,
+                                                    dictionary,
+                                                    authtoken,
+                                                    featuretoggles,
+                                                    plan,
+                                                    formIsOffline,
+                                                })
+                                            }}
+                                            containerStyle={ check.value===false ? {backgroundColor: "#FFE4E1"} : {} }
+                                        >
+                                            <ListItem.Content>
+                                                <ListItem.Title>&bull; {dictionary[check.id].name}</ListItem.Title>
+                                                <ListItem.Subtitle style={(check.comment || check.image) && {margin:15} }>{escapeBR(check.comment)} {check.image && '🖼'}</ListItem.Subtitle>
+                                            </ListItem.Content>
+                                            
+                                            {
+                                                <Switch
+                                                    value={!check.value}
+                                                    onValueChange={() => {
+                                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+                                                        check.value = !check.value;
+                                                        saveForm();
+                                                        forceUpdate();
+                                                    }}
+                                                    color="#900603"
+                                                />
+                                            }
+                                            
+                                        </ListItem>
+                                    )
+                                })
 
         const falseCheckCount = section.nested.reduce( (sum, cur) => ( sum + ( !cur.value ? 1 : 0) ), 0 );
         const badgeUI = falseCheckCount ? <Badge value={falseCheckCount} status="error"/> : '';
-        return (
+        return sectionChecks.length ? (
             <>
                 <ListItem.Accordion
                     key={section.id}
@@ -272,7 +276,7 @@ export default function RoomScreen ({navigation, route}) {
                         <>
                             <ListItem.Content>
                                 <ListItem.Title h4={true}>{section.name ? section.name : dictionary[section.templateId].name} {badgeUI}</ListItem.Title>
-                                <ListItem.Subtitle>{inclineWord(section.nested.length, "проверка")} </ListItem.Subtitle>
+                                <ListItem.Subtitle>{ searchStr ? 'Найдено ' : ''}{inclineWord(sectionChecks.length, "проверка")} </ListItem.Subtitle>
                             </ListItem.Content>
                             {
                                 <Icon 
@@ -293,34 +297,33 @@ export default function RoomScreen ({navigation, route}) {
                         setExpanded((expanded)=>({...expanded, [section.id]: !expanded[section.id]}));
                     }}
                 >
-                    {sectionChecks}
+                    {sectionChecksUI}
                 </ListItem.Accordion>
                 <Divider width={10} style={{ opacity: 0 }} />
             </>
-        )
+        ) : null
     })
 
-//hack
-
+    //hack
     const [isScrollEnabled, setIsScrollEnabled] = useState(true); 
   
-  function onKeyboardWillShow() {
-    setIsScrollEnabled(false);
-  }
+    function onKeyboardWillShow() {
+        setIsScrollEnabled(false);
+    }
 
-  function onKeyboardDidShow() {
-    setIsScrollEnabled(true);
-  }
+    function onKeyboardDidShow() {
+        setIsScrollEnabled(true);
+    }
 
-  useEffect(() => {
-    const subKWS = Keyboard.addListener("keyboardWillShow", onKeyboardWillShow);
-    const subKDS = Keyboard.addListener("keyboardDidShow", onKeyboardDidShow);
+    useEffect(() => {
+        const subKWS = Keyboard.addListener("keyboardWillShow", onKeyboardWillShow);
+        const subKDS = Keyboard.addListener("keyboardDidShow", onKeyboardDidShow);
 
-    return () => {
-      subKWS.remove();
-      subKDS.remove();
-    };
-  }, []);
+        return () => {
+        subKWS.remove();
+        subKDS.remove();
+        };
+    }, []);
 
     const height = useHeaderHeight()
 
@@ -336,6 +339,13 @@ export default function RoomScreen ({navigation, route}) {
                             <View
                                 style={styles.inner}
                             >
+                                <View style={{ alignItems: 'flex-end' }}>
+                                    <Input
+                                        onChangeText={ setSearchStr }
+                                        value={ searchStr }
+                                        placeholder="Поиск по проверкам"
+                                    />
+                                </View>
                                 <View>
                                     {roomSections}
 

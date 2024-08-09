@@ -4,7 +4,7 @@
 
 import axios from 'axios';
 
-const baseURL = 'https://pm.priemka-pro.ru/api/admin/';
+const baseURL = 'https://priemka.msk.ru/api/admin/';
 
 export const Get = ( params ) => { 
     return new Promise((resolve, reject) => {

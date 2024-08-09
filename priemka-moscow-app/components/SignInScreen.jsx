@@ -175,8 +175,6 @@ export default function SignInScreen ({navigation, route}) {
         getDeviceId()
         .then(deviceId =>{ 
             setDeviceId(deviceId)
-            init(Config.AmplitudeKey, deviceId);
-            track('SignInScreen-View');
         } )
 
         // AsyncStorage.clear()

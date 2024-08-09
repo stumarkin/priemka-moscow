@@ -1,7 +1,13 @@
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
+
 # dependencies
 node_modules/
+
+
+/priemka-moscow-api/api/yookassa/*
+/priemka-moscow-api/api/aws/*
+
 
 # Expo
 .expo/
